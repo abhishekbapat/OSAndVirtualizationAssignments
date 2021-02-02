@@ -9,5 +9,18 @@ void _start(unsigned int *framebuffer, int width, int height)
 	   to indicate kernel activity. */
 
 	/* Never exit! */
-	while (1) {};
+
+	int colour = 0x2596beff;
+
+	for (int i = 0; i < width; i++)
+	{
+		for (int j = 0; j < height; j++)
+		{
+			framebuffer[i + width * j] = colour;
+		}
+	}
+
+	while (1)
+	{
+	};
 }
