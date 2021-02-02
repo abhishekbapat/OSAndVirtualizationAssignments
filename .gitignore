@@ -1,2 +1,11 @@
 *.vscode
 *.DS_Store
+**/uefi_iso_image/
+*.iso
+*.o
+*kernel
+**/fwimage
+*boot.dll
+*boot.efi
+*boot.lib
+

@@ -1,5 +1,8 @@
 #!/bin/sh
 
+#Clear old stuff
+rm boot.iso boot.o kernel kernel.o boot.dll boot.efi boot.lib
+
 # Compile the boot loader
 clang -m64 -O2 -fshort-wchar -I ../Include -I ../Include/X64 -mcmodel=small -mno-red-zone -mno-stack-arg-probe -target x86_64-pc-mingw32 -Wall -c boot.c
 lld-link /dll /nodefaultlib /safeseh:no /machine:AMD64 /entry:efi_main boot.o /out:boot.dll
