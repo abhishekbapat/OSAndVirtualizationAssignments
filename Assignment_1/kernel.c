@@ -3,23 +3,27 @@
  * Copyright 2021 Ruslan Nikolaev <rnikola@vt.edu>
  */
 
+//TODO: Figure out how to correctly draw.
 void _start(unsigned int *framebuffer, int width, int height)
 {
-	/* TODO: Draw some simple figure (rectangle, square, etc)
+	/* Draw some simple figure (rectangle, square, etc)
 	   to indicate kernel activity. */
 
-	/* Never exit! */
-
 	int colour = 0x2596beff;
+	int centerHeight = (height/2)-1;
+	int centerWidth = (width/2)-1;
+	int rectHeight = 500;
+	int rectWidth = 700;
 
-	for (int i = 0; i < width; i++)
+	for (int i = centerWidth-(rectWidth/2); i < centerWidth+(rectWidth/2); i++)
 	{
-		for (int j = 0; j < height; j++)
+		for (int j = centerHeight-(rectHeight/2); j < centerHeight+(rectHeight/2); j++)
 		{
 			framebuffer[i + width * j] = colour;
 		}
 	}
 
+	/* Never exit! */
 	while (1)
 	{
 	};

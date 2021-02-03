@@ -140,20 +140,44 @@ static UINT32 *SetGraphicsMode(UINT32 width, UINT32 height)
 		return NULL;
 	}
 
+	EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *info;
+	UINTN size = sizeof(EFI_GRAPHICS_OUTPUT_MODE_INFORMATION);
+	UINT32 *frameBufferDefault = (UINT32 *)graphics->Mode->FrameBufferBase;
+
 	for (mode = 0; mode < graphics->Mode->MaxMode; mode++)
 	{
-		EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *info;
-		UINTN size;
-
-		// TODO: Locate BlueGreenRedReserved, aka BGRA (8-bit per color)
+		// Locate BlueGreenRedReserved, aka BGRA (8-bit per color)
 		// Resolution width x height (800x600 in our code)
+		efi_status = graphics->QueryMode(graphics, mode, &size, &info);
+		if (EFI_ERROR(efi_status))
+		{
+			SystemTable->ConOut->OutputString(SystemTable->ConOut,
+											  L"Cannot get graphics information!\r\n");
+			break;
+		}
+		if (info->PixelFormat != PixelBlueGreenRedReserved8BitPerColor)
+			continue;
+		if (info->VerticalResolution != height || info->HorizontalResolution != width)
+			continue;
 
 		// Activate (set) this graphics mode
+		efi_status = graphics->SetMode(graphics, mode);
+		if (EFI_ERROR(efi_status))
+		{
+			SystemTable->ConOut->OutputString(SystemTable->ConOut,
+											  L"Cannot set graphics mode!\r\n");
+			break;
+		}
 
 		// Return the frame buffer base address
 		return (UINT32 *)graphics->Mode->FrameBufferBase;
 	}
-	return NULL;
+	
+	//Could not set specified graphics mode.
+	SystemTable->ConOut->OutputString(SystemTable->ConOut,
+											  L"Cannot set the specified graphics mode!\r\n");
+	BootServices->Stall(5*1000000);//Wait for five seconds to display the message.
+	return frameBufferDefault;
 }
 
 /* Use System V ABI rather than EFI/Microsoft ABI. */
@@ -190,7 +214,7 @@ efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable)
 	// kernel's _start() is at base #0 (pure binary format)
 	// cast the function pointer appropriately and call the function
 	//
-	kernel_entry_t func = (kernel_entry_t) buffer;
+	kernel_entry_t func = (kernel_entry_t)buffer;
 	func(fb, 800, 600);
 
 	FreePool(buffer);
