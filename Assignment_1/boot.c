@@ -172,12 +172,44 @@ static UINT32 *SetGraphicsMode(UINT32 width, UINT32 height)
 		// Return the frame buffer base address
 		return (UINT32 *)graphics->Mode->FrameBufferBase;
 	}
-	
+
 	//Could not set specified graphics mode.
 	SystemTable->ConOut->OutputString(SystemTable->ConOut,
-											  L"Cannot set the specified graphics mode!\r\n");
-	BootServices->Stall(5*1000000);//Wait for five seconds to display the message.
+									  L"Cannot set the specified graphics mode!\r\n");
+	BootServices->Stall(5 * 1000000); //Wait for five seconds to display the message.
 	return frameBufferDefault;
+}
+
+static EFI_STATUS GetMemoryMap(UINTN *mapKey)
+{
+	UINTN descriptorSize;
+	UINT32 descriptorVersion;
+	UINT8 tempMemoryMap[1];
+	EFI_STATUS efi_status;
+	UINTN memoryMapSize = sizeof(tempMemoryMap);
+	int counter = 0;
+
+	do
+	{
+		efi_status = BootServices->GetMemoryMap(&memoryMapSize, (EFI_MEMORY_DESCRIPTOR *)tempMemoryMap, mapKey, &descriptorSize, &descriptorVersion);
+		if (EFI_ERROR(efi_status))
+		{
+			if (efi_status == EFI_BUFFER_TOO_SMALL)
+			{
+				SystemTable->ConOut->OutputString(SystemTable->ConOut,
+												  L"memory map buffer too small, retrying with correct value!\r\n");
+				BootServices->Stall(2 * 1000000);
+				UINT8 tempMemoryMap[memoryMapSize + 1];
+			}
+			else
+			{
+				break;
+			}
+		}
+		counter++;
+	} while (counter < 10 && efi_status != EFI_SUCCESS);
+
+	return efi_status;
 }
 
 /* Use System V ABI rather than EFI/Microsoft ABI. */
@@ -214,10 +246,29 @@ efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable)
 	// kernel's _start() is at base #0 (pure binary format)
 	// cast the function pointer appropriately and call the function
 	//
-	kernel_entry_t func = (kernel_entry_t)buffer;
-	func(fb, 800, 600);
+	// kernel_entry_t func = (kernel_entry_t)buffer;
+	// func(fb, 800, 600);
 
-	FreePool(buffer);
+	//FreePool(buffer);
+
+	UINTN mapKey;
+	efi_status = GetMemoryMap(&mapKey);
+	if (EFI_ERROR(efi_status))
+	{
+		SystemTable->ConOut->OutputString(SystemTable->ConOut,
+										  L"Error getting memory map key!\r\n");
+		BootServices->Stall(5 * 1000000);
+		return efi_status;
+	}
+
+	efi_status = BootServices->ExitBootServices(imageHandle, mapKey);
+	if (EFI_ERROR(efi_status))
+	{
+		SystemTable->ConOut->OutputString(SystemTable->ConOut,
+										  L"Error exiting boot services!\r\n");
+		BootServices->Stall(5 * 1000000);
+		return efi_status;
+	}
 
 	return EFI_SUCCESS;
 }
