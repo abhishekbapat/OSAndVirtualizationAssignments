@@ -94,15 +94,33 @@ static void CloseKernel(EFI_FILE_PROTOCOL *vh, EFI_FILE_PROTOCOL *fh)
 static UINTN ReadFileSize(EFI_FILE_PROTOCOL *fh)
 {
 	EFI_STATUS efi_status;
-	UINTN file_size;
+	EFI_FILE_INFO *file_info;
+	UINTN file_info_size = 0;
 
 	//Read the file size.
-	efi_status = fh->GetInfo(fh, &gEfiFileInfoGuid, &file_size, NULL);
-	if (EFI_ERROR(efi_status))
+	efi_status = fh->GetInfo(fh, &gEfiFileInfoGuid, &file_info_size, NULL);
+	if (efi_status == EFI_BUFFER_TOO_SMALL)
+	{
+		file_info = AllocatePool(file_info_size);
+	}
+	else
 	{
 		SystemTable->ConOut->OutputString(SystemTable->ConOut,
 										  L"Cannot get file size for KERNEL.\r\n");
+		return -1;
 	}
+
+	efi_status = fh->GetInfo(fh, &gEfiFileInfoGuid, &file_info_size, file_info);
+	if (EFI_ERROR(efi_status))
+	{
+		SystemTable->ConOut->OutputString(SystemTable->ConOut,
+										  L"Cannot get file KERNEL file info.\r\n");
+	}
+
+	UINTN file_size = file_info->FileSize;
+
+	FreePool(file_info);
+
 	return file_size;
 }
 
@@ -246,29 +264,29 @@ efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable)
 	// kernel's _start() is at base #0 (pure binary format)
 	// cast the function pointer appropriately and call the function
 	//
-	// kernel_entry_t func = (kernel_entry_t)buffer;
-	// func(fb, 800, 600);
+	kernel_entry_t func = (kernel_entry_t)buffer;
+	func(fb, 800, 600);
 
-	//FreePool(buffer);
+	FreePool(buffer);
 
-	UINTN mapKey;
-	efi_status = GetMemoryMap(&mapKey);
-	if (EFI_ERROR(efi_status))
-	{
-		SystemTable->ConOut->OutputString(SystemTable->ConOut,
-										  L"Error getting memory map key!\r\n");
-		BootServices->Stall(5 * 1000000);
-		return efi_status;
-	}
+	// UINTN mapKey;
+	// efi_status = GetMemoryMap(&mapKey);
+	// if (EFI_ERROR(efi_status))
+	// {
+	// 	SystemTable->ConOut->OutputString(SystemTable->ConOut,
+	// 									  L"Error getting memory map key!\r\n");
+	// 	BootServices->Stall(5 * 1000000);
+	// 	return efi_status;
+	// }
 
-	efi_status = BootServices->ExitBootServices(imageHandle, mapKey);
-	if (EFI_ERROR(efi_status))
-	{
-		SystemTable->ConOut->OutputString(SystemTable->ConOut,
-										  L"Error exiting boot services!\r\n");
-		BootServices->Stall(5 * 1000000);
-		return efi_status;
-	}
+	// efi_status = BootServices->ExitBootServices(imageHandle, mapKey);
+	// if (EFI_ERROR(efi_status))
+	// {
+	// 	SystemTable->ConOut->OutputString(SystemTable->ConOut,
+	// 									  L"Error exiting boot services!\r\n");
+	// 	BootServices->Stall(5 * 1000000);
+	// 	return efi_status;
+	// }
 
 	return EFI_SUCCESS;
 }

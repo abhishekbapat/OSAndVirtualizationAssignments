@@ -4,7 +4,7 @@
  */
 
 //TODO: Figure out how to correctly draw.
-void _start(unsigned int *framebuffer, int width, int height)
+void kernel_start(unsigned int *framebuffer, int width, int height)
 {
 	/* Draw some simple figure (rectangle, square, etc)
 	   to indicate kernel activity. */
@@ -22,6 +22,14 @@ void _start(unsigned int *framebuffer, int width, int height)
 			framebuffer[i + width * j] = colour;
 		}
 	}
+
+	// for (int i = 0; i < rectWidth; i++)
+	// {
+	// 	for (int j = 0; j < rectHeight; j++)
+	// 	{
+	// 		framebuffer[i + width * j] = colour;
+	// 	}
+	// }
 
 	/* Never exit! */
 	while (1)
