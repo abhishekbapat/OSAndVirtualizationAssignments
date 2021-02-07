@@ -91,13 +91,13 @@ static void CloseKernel(EFI_FILE_PROTOCOL *vh, EFI_FILE_PROTOCOL *fh)
 	fh->Close(fh);
 }
 
-static UINTN ReadFileSize(EFI_FILE_PROTOCOL *fh)
+static EFI_STATUS ReadFileSize(EFI_FILE_PROTOCOL *fh, UINTN *file_size)
 {
 	EFI_STATUS efi_status;
 	EFI_FILE_INFO *file_info;
 	UINTN file_info_size = 0;
 
-	//Read the file size.
+	//Read the file info size.
 	efi_status = fh->GetInfo(fh, &gEfiFileInfoGuid, &file_info_size, NULL);
 	if (efi_status == EFI_BUFFER_TOO_SMALL)
 	{
@@ -107,7 +107,7 @@ static UINTN ReadFileSize(EFI_FILE_PROTOCOL *fh)
 	{
 		SystemTable->ConOut->OutputString(SystemTable->ConOut,
 										  L"Cannot get file size for KERNEL.\r\n");
-		return -1;
+		return efi_status;
 	}
 
 	efi_status = fh->GetInfo(fh, &gEfiFileInfoGuid, &file_info_size, file_info);
@@ -116,15 +116,16 @@ static UINTN ReadFileSize(EFI_FILE_PROTOCOL *fh)
 		SystemTable->ConOut->OutputString(SystemTable->ConOut,
 										  L"Cannot get file KERNEL file info.\r\n");
 	}
-
-	UINTN file_size = file_info->FileSize;
-
+	else
+	{
+		*file_size = file_info->FileSize;
+	}
 	FreePool(file_info);
 
-	return file_size;
+	return efi_status;
 }
 
-static void LoadKernel(EFI_FILE_PROTOCOL *fh, UINTN file_size, void *buffer)
+static EFI_STATUS LoadKernel(EFI_FILE_PROTOCOL *fh, UINTN file_size, void *buffer)
 {
 	EFI_STATUS efi_status;
 
@@ -134,6 +135,7 @@ static void LoadKernel(EFI_FILE_PROTOCOL *fh, UINTN file_size, void *buffer)
 		SystemTable->ConOut->OutputString(SystemTable->ConOut,
 										  L"Cannot load KERNEL file.\r\n");
 	}
+	return efi_status;
 }
 
 static UINT32 *SetGraphicsMode(UINT32 width, UINT32 height)
@@ -198,36 +200,48 @@ static UINT32 *SetGraphicsMode(UINT32 width, UINT32 height)
 	return frameBufferDefault;
 }
 
-static EFI_STATUS GetMemoryMap(UINTN *mapKey)
+static EFI_STATUS GetMemoryMapKey(UINTN *mapKey)
 {
 	UINTN descriptorSize;
 	UINT32 descriptorVersion;
-	UINT8 tempMemoryMap[1];
+	EFI_MEMORY_DESCRIPTOR *memoryMap;
 	EFI_STATUS efi_status;
-	UINTN memoryMapSize = sizeof(tempMemoryMap);
-	int counter = 0;
+	UINTN memoryMapSize = 0;
+	UINTN tempMemoryMapKey;
+	memoryMap = NULL;
 
-	do
+	efi_status = BootServices->GetMemoryMap(&memoryMapSize, memoryMap, &tempMemoryMapKey, &descriptorSize, &descriptorVersion);
+	if (efi_status == EFI_BUFFER_TOO_SMALL)
 	{
-		efi_status = BootServices->GetMemoryMap(&memoryMapSize, (EFI_MEMORY_DESCRIPTOR *)tempMemoryMap, mapKey, &descriptorSize, &descriptorVersion);
-		if (EFI_ERROR(efi_status))
-		{
-			if (efi_status == EFI_BUFFER_TOO_SMALL)
-			{
-				SystemTable->ConOut->OutputString(SystemTable->ConOut,
-												  L"memory map buffer too small, retrying with correct value!\r\n");
-				BootServices->Stall(2 * 1000000);
-				UINT8 tempMemoryMap[memoryMapSize + 1];
-			}
-			else
-			{
-				break;
-			}
-		}
-		counter++;
-	} while (counter < 10 && efi_status != EFI_SUCCESS);
+		memoryMap = AllocatePool(memoryMapSize);
+	}
+	else
+	{
+		SystemTable->ConOut->OutputString(SystemTable->ConOut,
+										  L"Error reading the memory map size.\r\n");
+		return efi_status;
+	}
+
+	efi_status = BootServices->GetMemoryMap(&memoryMapSize, memoryMap, &tempMemoryMapKey, &descriptorSize, &descriptorVersion);
+	if (EFI_ERROR(efi_status))
+	{
+		SystemTable->ConOut->OutputString(SystemTable->ConOut,
+										  L"Error reading the memory map key.\r\n");
+	}
+	else
+	{
+		*mapKey = tempMemoryMapKey;
+	}
+
+	FreePool(memoryMap);
 
 	return efi_status;
+}
+
+static void PrintMessage(UINTN delay_seconds, CHAR16 *message)
+{
+	SystemTable->ConOut->OutputString(SystemTable->ConOut, message);
+	BootServices->Stall(delay_seconds * 1000000);
 }
 
 /* Use System V ABI rather than EFI/Microsoft ABI. */
@@ -240,7 +254,7 @@ efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable)
 	EFI_STATUS efi_status;
 	UINT32 *fb;
 	void *buffer;
-	UINTN file_size;
+	UINTN file_size = 0;
 
 	ImageHandle = imageHandle;
 	SystemTable = systemTable;
@@ -252,41 +266,57 @@ efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable)
 		BootServices->Stall(5 * 1000000); // 5 seconds
 		return efi_status;
 	}
+	PrintMessage(2, L"Opened kernel file for reading. \r\n");
 
-	file_size = ReadFileSize(fh);
-	buffer = AllocatePool(file_size);
-	LoadKernel(fh, file_size, buffer);
+	efi_status = ReadFileSize(fh, &file_size);
+	if (EFI_ERROR(efi_status))
+	{
+		BootServices->Stall(5 * 1000000); // 5 seconds
+		return efi_status;
+	}
+	PrintMessage(2, L"Read kernel file size. \r\n");
+
+	// buffer = AllocatePool(file_size);
+	// efi_status = LoadKernel(fh, file_size, buffer);
+	// if (EFI_ERROR(efi_status))
+	// {
+	// 	BootServices->Stall(5 * 1000000); // 5 seconds
+	// 	return efi_status;
+	// }
+	// PrintMessage(2, L"Loaded kernel. \r\n");
 
 	CloseKernel(vh, fh);
+	PrintMessage(2, L"Closed kernel file. \r\n");
 
-	fb = SetGraphicsMode(800, 600);
+	// fb = SetGraphicsMode(800, 600);
+	// PrintMessage(2, L"Graphics mode set to 800x600. \r\n");
 
 	// kernel's _start() is at base #0 (pure binary format)
 	// cast the function pointer appropriately and call the function
 	//
-	kernel_entry_t func = (kernel_entry_t)buffer;
-	func(fb, 800, 600);
+	// kernel_entry_t func = (kernel_entry_t)buffer;
+	// func(fb, 800, 600);
 
-	FreePool(buffer);
+	// FreePool(buffer);
 
-	// UINTN mapKey;
-	// efi_status = GetMemoryMap(&mapKey);
-	// if (EFI_ERROR(efi_status))
-	// {
-	// 	SystemTable->ConOut->OutputString(SystemTable->ConOut,
-	// 									  L"Error getting memory map key!\r\n");
-	// 	BootServices->Stall(5 * 1000000);
-	// 	return efi_status;
-	// }
+	UINTN mapKey = 0;
+	efi_status = GetMemoryMapKey(&mapKey);
+	if (EFI_ERROR(efi_status))
+	{
+		BootServices->Stall(5 * 1000000);
+		return efi_status;
+	}
+	PrintMessage(2, L"Got memory map key. \r\n");
 
-	// efi_status = BootServices->ExitBootServices(imageHandle, mapKey);
-	// if (EFI_ERROR(efi_status))
-	// {
-	// 	SystemTable->ConOut->OutputString(SystemTable->ConOut,
-	// 									  L"Error exiting boot services!\r\n");
-	// 	BootServices->Stall(5 * 1000000);
-	// 	return efi_status;
-	// }
+	PrintMessage(2, L"Exiting boot services. \r\n");
+	efi_status = BootServices->ExitBootServices(imageHandle, mapKey);
+	if (EFI_ERROR(efi_status))
+	{
+		SystemTable->ConOut->OutputString(SystemTable->ConOut,
+										  L"Error exiting boot services!\r\n");
+		BootServices->Stall(5 * 1000000);
+		return efi_status;
+	}
 
 	return EFI_SUCCESS;
 }
