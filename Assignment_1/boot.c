@@ -210,30 +210,26 @@ static EFI_STATUS ExitBootServicesHook(EFI_HANDLE imageHandle)
 	UINTN memoryMapKey;
 	memoryMap = NULL;
 
-	efi_status = BootServices->GetMemoryMap(&memoryMapSize, memoryMap, &memoryMapKey, &descriptorSize, &descriptorVersion);
-	if (efi_status == EFI_BUFFER_TOO_SMALL)
+	do
 	{
-		memoryMap = AllocatePool(memoryMapSize, EfiBootServicesData);
-	}
-	else
-	{
-		SystemTable->ConOut->OutputString(SystemTable->ConOut,
-										  L"Error reading the memory map size.\r\n");
-		return efi_status;
-	}
-
-	efi_status = BootServices->GetMemoryMap(&memoryMapSize, memoryMap, &memoryMapKey, &descriptorSize, &descriptorVersion);
-	if (EFI_ERROR(efi_status))
-	{
-		SystemTable->ConOut->OutputString(SystemTable->ConOut,
-										  L"Error reading the memory map key.\r\n");
-		return efi_status;
-	}
-
-	//FreePool(memoryMap);
-
-	BootServices->ExitBootServices(imageHandle, memoryMapKey);
-
+		efi_status = BootServices->GetMemoryMap(&memoryMapSize, memoryMap, &memoryMapKey, &descriptorSize, &descriptorVersion);
+		if (efi_status == EFI_BUFFER_TOO_SMALL)
+		{
+			memoryMap = AllocatePool(memoryMapSize, EfiBootServicesData);
+		}
+		else if (efi_status == EFI_SUCCESS)
+		{
+			BootServices->ExitBootServices(imageHandle, memoryMapKey);
+			break;
+		}
+		else
+		{
+			SystemTable->ConOut->OutputString(SystemTable->ConOut,
+											  L"Error reading the memory map size.\r\n");
+			break;
+		}
+	} while (1);
+	
 	return efi_status;
 }
 
