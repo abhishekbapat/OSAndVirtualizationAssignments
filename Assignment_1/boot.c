@@ -229,7 +229,7 @@ static EFI_STATUS ExitBootServicesHook(EFI_HANDLE imageHandle)
 			break;
 		}
 	} while (1);
-	
+
 	return efi_status;
 }
 
@@ -243,6 +243,8 @@ efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable)
 	EFI_STATUS efi_status;
 	UINT32 *fb;
 	void *buffer;
+	void *page_table_base;
+	UINTN page_table_size = 8413184 + 4095; //extra 4095 bytes for alignment.
 	UINTN file_size = 0;
 
 	ImageHandle = imageHandle;
@@ -275,6 +277,8 @@ efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable)
 
 	fb = SetGraphicsMode(800, 600);
 
+	page_table_base = AllocatePool(page_table_size, EfiPersistentMemory);
+
 	efi_status = ExitBootServicesHook(ImageHandle);
 	if (EFI_ERROR(efi_status))
 	{
@@ -286,7 +290,7 @@ efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable)
 	// cast the function pointer appropriately and call the function
 
 	kernel_entry_t func = (kernel_entry_t)buffer;
-	func(fb, 800, 600);
+	func(fb, 800, 600, page_table_base);
 
 	// FreePool(buffer);
 
