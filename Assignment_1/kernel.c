@@ -8,17 +8,16 @@
 
 //Declare the methods.
 void draw_rect(int, int, int, int, int, unsigned int *);
-void page_table_init(unsigned int *);
-struct page_table_entry page_table_entry_init_from_u64(u64);
-struct page_directory_entry page_directory_entry_init_from_u64(u64);
-struct page_directory_pointer_entry page_directory_pointer_entry_init_from_u64(u64);
-struct page_map_level4_entry page_map_level4_entry_init_from_u64(u64);
 
 void kernel_start(unsigned int *framebuffer, int width, int height, unsigned int *pt_base)
 {
 	int colour = 0x2596beff;
 	int rectHeight = 200;
 	int rectWidth = 400;
+
+	u64 topAddr = page_table_init(pt_base);
+	topAddr = topAddr << 12;
+	write_cr3(topAddr);
 
 	draw_rect(colour, rectWidth, rectHeight, width, height, framebuffer);
 
@@ -42,29 +41,55 @@ void draw_rect(int colour, int rectWidth, int rectHeight, int width, int height,
 	}
 }
 
-void page_table_init(unsigned int *base)
+u64 page_table_init(unsigned int *base)
 {
-	unsigned int pages = 1048576; //hardcode for 4gb mapping.
-	unsigned int num_pte = pages / 512;
-	unsigned int num_pde = num_pte / 512;
-	unsigned int num_pdpe = num_pde / 4;
+	unsigned int pages = 1048576;		  //hardcode for 4gb mapping.
+	unsigned int num_pte = pages / 512;	  // 2048
+	unsigned int num_pde = num_pte / 512; // 4
+	unsigned int num_pdpe = num_pde / 4;  // 1
 
 	struct page_table_entry *pte = (struct page_table_entry *)base;
 	pte[0] = page_table_entry_init_from_u64(0x0);
-	for (int i = 1; i < pages; i++)
+	for (unsigned int i = 1; i < pages; i++)
 	{
 		pte[i] = page_table_entry_init_from_u64((0x1000 * i) + 0x3);
 	}
 
 	struct page_directory_entry *pde = (struct page_directory_entry *)(pte + pages);
-	for (int j = 0; j < num_pte; j++)
+	struct page_table_entry *pte_start = pte;
+	u64 page_addr = (u64)pte_start >> 12;
+	page_addr = page_addr << 12;
+	pde[0] = page_directory_entry_init_from_u64(page_addr + 0x3);
+	for (int j = 1; j < num_pte; j++)
 	{
-		struct page_table_entry *pte_start = pte + (512 * j);
-		
+		pte_start = pte + 512 * j;
+		page_addr = (u64)pte_start >> 12;
+		page_addr = page_addr << 40;
+		pde[j] = page_directory_entry_init_from_u64(page_addr + 0x3 + 0x80);
 	}
+
+	struct page_directory_pointer_entry *pdpe = (struct page_directory_pointer_entry *)(pde + num_pte);
+	for (int k = 0; k < num_pde; k++)
+	{
+		struct page_directory_entry *pde_start = pde + 512 * k;
+		page_addr = (u64)pde_start >> 12;
+		page_addr = page_addr << 12;
+		pdpe[k] = page_directory_pointer_entry_init_from_u64(page_addr + 0x3);
+	}
+
+	struct page_map_level4_entry *pml4e = (struct page_map_level4_entry *)(pdpe + num_pde);
+	for (int m = 0; m < num_pdpe; m++)
+	{
+		struct page_directory_pointer_entry *pdpe_start = pdpe + 4 * m;
+		page_addr = (u64)pdpe_start >> 12;
+		page_addr = page_addr << 12;
+		pml4e[m] = page_map_level4_entry_init_from_u64(page_addr + 0x3);
+	}
+
+	return (u64)pml4e >> 12;
 }
 
-void write_cr3(unsigned long long cr3_value)
+void write_cr3(u64 cr3_value)
 {
 	asm volatile("mov %0, %%cr3" ::"r"(cr3_value)
 				 : "memory");

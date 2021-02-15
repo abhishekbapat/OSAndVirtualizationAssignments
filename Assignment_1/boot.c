@@ -234,7 +234,7 @@ static EFI_STATUS ExitBootServicesHook(EFI_HANDLE imageHandle)
 }
 
 /* Use System V ABI rather than EFI/Microsoft ABI. */
-typedef void (*kernel_entry_t)(unsigned int *, int, int) __attribute__((sysv_abi));
+typedef void (*kernel_entry_t)(unsigned int *, int, int, unsigned int *) __attribute__((sysv_abi));
 
 EFI_STATUS EFIAPI
 efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable)

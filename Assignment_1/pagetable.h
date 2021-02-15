@@ -63,3 +63,10 @@ struct page_map_level4_entry
     u64 avail:11;
     u64 nonexecute:1;
 };
+
+u64 page_table_init(unsigned int *);
+void write_cr3(u64);
+struct page_table_entry page_table_entry_init_from_u64(u64);
+struct page_directory_entry page_directory_entry_init_from_u64(u64);
+struct page_directory_pointer_entry page_directory_pointer_entry_init_from_u64(u64);
+struct page_map_level4_entry page_map_level4_entry_init_from_u64(u64);
