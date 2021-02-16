@@ -17,7 +17,7 @@ void kernel_start(unsigned int *framebuffer, int width, int height, unsigned int
 
 	u64 topAddr = page_table_init(pt_base);
 	topAddr = topAddr << 12;
-	write_cr3(topAddr);
+	//write_cr3(topAddr);
 
 	draw_rect(colour, rectWidth, rectHeight, width, height, framebuffer);
 
@@ -86,7 +86,7 @@ u64 page_table_init(unsigned int *base)
 		pml4e[m] = page_map_level4_entry_init_from_u64(page_addr + 0x3);
 	}
 
-	return (u64)pml4e >> 12;
+	return ((u64)pte) >> 12;
 }
 
 void write_cr3(u64 cr3_value)

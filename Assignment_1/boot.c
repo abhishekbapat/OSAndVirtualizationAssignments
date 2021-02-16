@@ -278,6 +278,7 @@ efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable)
 	fb = SetGraphicsMode(800, 600);
 
 	page_table_base = AllocatePool(page_table_size, EfiPersistentMemory);
+	page_table_base = (void *) (((unsigned long long) page_table_base + 4095) & (~4095ULL));
 
 	efi_status = ExitBootServicesHook(ImageHandle);
 	if (EFI_ERROR(efi_status))
