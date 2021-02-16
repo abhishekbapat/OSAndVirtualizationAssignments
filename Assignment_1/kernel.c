@@ -16,8 +16,8 @@ void kernel_start(unsigned int *framebuffer, int width, int height, unsigned int
 	int rectWidth = 400;
 
 	u64 topAddr = page_table_init(pt_base);
-	topAddr = topAddr << 12;
-	//write_cr3(topAddr);
+	topAddr <<= 12;
+	write_cr3(topAddr);
 
 	draw_rect(colour, rectWidth, rectHeight, width, height, framebuffer);
 
@@ -43,7 +43,7 @@ void draw_rect(int colour, int rectWidth, int rectHeight, int width, int height,
 
 u64 page_table_init(unsigned int *base)
 {
-	unsigned int pages = 1048576;		  //hardcode for 4gb mapping.
+	unsigned int pages = 1048576;		  //hardcode for 4gb mapping with 4kB page size.
 	unsigned int num_pte = pages / 512;	  // 2048
 	unsigned int num_pde = num_pte / 512; // 4
 	unsigned int num_pdpe = num_pde / 4;  // 1
@@ -64,7 +64,7 @@ u64 page_table_init(unsigned int *base)
 	{
 		pte_start = pte + 512 * j;
 		page_addr = (u64)pte_start >> 12;
-		page_addr = page_addr << 40;
+		page_addr <<= 12;
 		pde[j] = page_directory_entry_init_from_u64(page_addr + 0x3 + 0x80);
 	}
 
@@ -73,7 +73,7 @@ u64 page_table_init(unsigned int *base)
 	{
 		struct page_directory_entry *pde_start = pde + 512 * k;
 		page_addr = (u64)pde_start >> 12;
-		page_addr = page_addr << 12;
+		page_addr <<= 12;
 		pdpe[k] = page_directory_pointer_entry_init_from_u64(page_addr + 0x3);
 	}
 
@@ -82,7 +82,7 @@ u64 page_table_init(unsigned int *base)
 	{
 		struct page_directory_pointer_entry *pdpe_start = pdpe + 4 * m;
 		page_addr = (u64)pdpe_start >> 12;
-		page_addr = page_addr << 12;
+		page_addr <<= 12;
 		pml4e[m] = page_map_level4_entry_init_from_u64(page_addr + 0x3);
 	}
 
