@@ -36,6 +36,28 @@ static VOID FreePool(VOID *buf)
 	BootServices->FreePool(buf);
 }
 
+static EFI_STATUS AllocatePages(EFI_ALLOCATE_TYPE type, EFI_MEMORY_TYPE memory_type, UINTN pages, UINTN *base)
+{
+	EFI_STATUS efi_status;
+	efi_status = BootServices->AllocatePages(type, memory_type, pages, base);
+	if (efi_status == EFI_INVALID_PARAMETER)
+	{
+		SystemTable->ConOut->OutputString(SystemTable->ConOut,
+										  L"Could not allocate pages due to invalid parameters.\r\n");
+	}
+	else if (efi_status == EFI_OUT_OF_RESOURCES)
+	{
+		SystemTable->ConOut->OutputString(SystemTable->ConOut,
+										  L"Could not allocate pages as enough resources are not available.\r\n");
+	}
+	else if (efi_status == EFI_NOT_FOUND)
+	{
+		SystemTable->ConOut->OutputString(SystemTable->ConOut,
+										  L"Could not allocate pages as the requested pages could not be found.\r\n");
+	}
+	return efi_status;
+}
+
 static EFI_STATUS OpenKernel(EFI_FILE_PROTOCOL **pvh, EFI_FILE_PROTOCOL **pfh)
 {
 	EFI_LOADED_IMAGE *li = NULL;
@@ -234,7 +256,7 @@ static EFI_STATUS ExitBootServicesHook(EFI_HANDLE imageHandle)
 }
 
 /* Use System V ABI rather than EFI/Microsoft ABI. */
-typedef void (*kernel_entry_t)(unsigned int *, int, int, unsigned int *) __attribute__((sysv_abi));
+typedef void (*kernel_entry_t)(unsigned int *, int, int, EFI_PHYSICAL_ADDRESS *) __attribute__((sysv_abi));
 
 EFI_STATUS EFIAPI
 efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable)
@@ -243,8 +265,8 @@ efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable)
 	EFI_STATUS efi_status;
 	UINT32 *fb;
 	void *buffer;
-	void *page_table_base;
-	UINTN page_table_size = 8413184 + 4095; //extra 4095 bytes for alignment.
+	EFI_PHYSICAL_ADDRESS page_table_base = 0x0000000100000000ULL;
+	UINTN page_table_pages = EFI_SIZE_TO_PAGES(SIZE_8MB + SIZE_16KB + SIZE_8KB + SIZE_4KB);//One extra page for buffer. 2055 4kb pages
 	UINTN file_size = 0;
 
 	ImageHandle = imageHandle;
@@ -261,7 +283,7 @@ efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable)
 	efi_status = ReadFileSize(fh, &file_size);
 	if (EFI_ERROR(efi_status))
 	{
-		BootServices->Stall(5 * 1000000); // 5 seconds
+		BootServices->Stall(5 * 1000000); // 5 seconds0x0000000100000000ULL
 		return efi_status;
 	}
 
@@ -275,10 +297,17 @@ efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable)
 
 	CloseKernel(vh, fh);
 
+	efi_status = AllocatePages(AllocateMaxAddress, EfiLoaderData, page_table_pages, &page_table_base);
+	if (EFI_ERROR(efi_status))
+	{
+		BootServices->Stall(5 * 1000000); // 5 seconds
+		return efi_status;
+	}
+
 	fb = SetGraphicsMode(800, 600);
 
-	page_table_base = AllocatePool(page_table_size, EfiPersistentMemory);
-	page_table_base = (void *) (((unsigned long long) page_table_base + 4095) & (~4095ULL));
+	// page_table_base = AllocatePool(page_table_size, EfiPersistentMemory);
+	// page_table_base = (void *) (((unsigned long long) page_table_base + 4095) & (~4095ULL));
 
 	efi_status = ExitBootServicesHook(ImageHandle);
 	if (EFI_ERROR(efi_status))
@@ -291,7 +320,7 @@ efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable)
 	// cast the function pointer appropriately and call the function
 
 	kernel_entry_t func = (kernel_entry_t)buffer;
-	func(fb, 800, 600, page_table_base);
+	func(fb, 800, 600, &page_table_base);
 
 	// FreePool(buffer);
 
