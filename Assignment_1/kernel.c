@@ -4,10 +4,12 @@
  * After page table initialization, this kernel draws a rectanlge in the video frambuffer passed by the bootloader.
  */
 
-#include "pagetable.h"
+typedef unsigned long long u64;
 
 // Declare the methods.
 void draw_rect(int, int, int, int, int, unsigned int *);
+u64 page_table_init(void *);
+void write_cr3(u64);
 
 // Kernel entry point.
 void kernel_start(unsigned int *framebuffer, int width, int height, void *pt_base)
