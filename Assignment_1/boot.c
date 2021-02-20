@@ -1,7 +1,3 @@
-/*
- * boot.c - a boot loader template (Assignment 1, ECE 6504)
- * Copyright 2021 Ruslan Nikolaev <rnikola@vt.edu>
- */
 
 #include <Uefi.h>
 #include <Protocol/LoadedImage.h>
@@ -20,8 +16,7 @@ static EFI_HANDLE ImageHandle;
 static EFI_SYSTEM_TABLE *SystemTable;
 static EFI_BOOT_SERVICES *BootServices;
 
-// Currently uses only EfiBootServicesData
-// The function can be extended to accept any type as necessary
+// Wrapper method to allocate memory.
 static VOID *AllocatePool(UINTN size, EFI_MEMORY_TYPE memoryType)
 {
 	VOID *ptr;
@@ -31,11 +26,13 @@ static VOID *AllocatePool(UINTN size, EFI_MEMORY_TYPE memoryType)
 	return ptr;
 }
 
+// Wrapper method to free memory buffer.
 static VOID FreePool(VOID *buf)
 {
 	BootServices->FreePool(buf);
 }
 
+// Wrapper method used to allocate memory in contiguous 4kb pages.
 static EFI_STATUS AllocatePages(EFI_ALLOCATE_TYPE type, EFI_MEMORY_TYPE memory_type, UINTN pages, UINTN *base)
 {
 	EFI_STATUS efi_status;
@@ -58,6 +55,7 @@ static EFI_STATUS AllocatePages(EFI_ALLOCATE_TYPE type, EFI_MEMORY_TYPE memory_t
 	return efi_status;
 }
 
+// Opens the kernel file.
 static EFI_STATUS OpenKernel(EFI_FILE_PROTOCOL **pvh, EFI_FILE_PROTOCOL **pfh)
 {
 	EFI_LOADED_IMAGE *li = NULL;
@@ -107,12 +105,14 @@ static EFI_STATUS OpenKernel(EFI_FILE_PROTOCOL **pvh, EFI_FILE_PROTOCOL **pfh)
 	return EFI_SUCCESS;
 }
 
+// Closer the kernel file.
 static void CloseKernel(EFI_FILE_PROTOCOL *vh, EFI_FILE_PROTOCOL *fh)
 {
 	vh->Close(vh);
 	fh->Close(fh);
 }
 
+// Reads the size of the file whose handle is passed to it.
 static EFI_STATUS ReadFileSize(EFI_FILE_PROTOCOL *fh, UINTN *file_size)
 {
 	EFI_STATUS efi_status;
@@ -147,6 +147,7 @@ static EFI_STATUS ReadFileSize(EFI_FILE_PROTOCOL *fh, UINTN *file_size)
 	return efi_status;
 }
 
+// Loads the kernel binary into memory buffer from the file handle.
 static EFI_STATUS LoadKernel(EFI_FILE_PROTOCOL *fh, UINTN file_size, void *buffer)
 {
 	EFI_STATUS efi_status;
@@ -160,6 +161,7 @@ static EFI_STATUS LoadKernel(EFI_FILE_PROTOCOL *fh, UINTN file_size, void *buffe
 	return efi_status;
 }
 
+// Method to set the graphics mode as BGRA.
 static UINT32 *SetGraphicsMode(UINT32 width, UINT32 height)
 {
 	EFI_GRAPHICS_OUTPUT_PROTOCOL *graphics;
@@ -188,8 +190,6 @@ static UINT32 *SetGraphicsMode(UINT32 width, UINT32 height)
 
 	for (mode = 0; mode < graphics->Mode->MaxMode; mode++)
 	{
-		// Locate BlueGreenRedReserved, aka BGRA (8-bit per color)
-		// Resolution width x height (800x600 in our code)
 		efi_status = graphics->QueryMode(graphics, mode, &size, &info);
 		if (EFI_ERROR(efi_status))
 		{
@@ -222,6 +222,7 @@ static UINT32 *SetGraphicsMode(UINT32 width, UINT32 height)
 	return frameBufferDefault;
 }
 
+// Method thats fetches the memory map and calls ExitBootServices.
 static EFI_STATUS ExitBootServicesHook(EFI_HANDLE imageHandle)
 {
 	UINTN descriptorSize;
@@ -231,85 +232,105 @@ static EFI_STATUS ExitBootServicesHook(EFI_HANDLE imageHandle)
 	UINTN memoryMapSize = 0;
 	UINTN memoryMapKey;
 	memoryMap = NULL;
-
-	do
+	while (1)
 	{
 		efi_status = BootServices->GetMemoryMap(&memoryMapSize, memoryMap, &memoryMapKey, &descriptorSize, &descriptorVersion);
 		if (efi_status == EFI_BUFFER_TOO_SMALL)
 		{
 			memoryMap = AllocatePool(memoryMapSize, EfiBootServicesData);
 		}
-		else if (efi_status == EFI_SUCCESS)
+		else if (EFI_ERROR(efi_status))
 		{
-			BootServices->ExitBootServices(imageHandle, memoryMapKey);
-			break;
+			SystemTable->ConOut->OutputString(SystemTable->ConOut,
+											  L"Error getting memory map size.\r\n");
+			return efi_status;
+		}
+		efi_status = BootServices->GetMemoryMap(&memoryMapSize, memoryMap, &memoryMapKey, &descriptorSize, &descriptorVersion);
+		if (EFI_ERROR(efi_status))
+		{
+			FreePool(memoryMap);
+			SystemTable->ConOut->OutputString(SystemTable->ConOut,
+											  L"Error getting memory map.\r\n");
+			return efi_status;
+		}
+
+		efi_status = BootServices->ExitBootServices(imageHandle, memoryMapKey);
+		if (efi_status == EFI_INVALID_PARAMETER)
+		{
+			FreePool(memoryMap);
+		}
+		else if (EFI_ERROR(efi_status))
+		{
+			SystemTable->ConOut->OutputString(SystemTable->ConOut,
+											  L"Error exiting boot services.\r\n");
+			FreePool(memoryMap);
+			return efi_status;
 		}
 		else
 		{
-			SystemTable->ConOut->OutputString(SystemTable->ConOut,
-											  L"Error reading the memory map size.\r\n");
 			break;
 		}
-	} while (1);
+	}
 
 	return efi_status;
 }
 
 /* Use System V ABI rather than EFI/Microsoft ABI. */
-typedef void (*kernel_entry_t)(unsigned int *, int, int, EFI_PHYSICAL_ADDRESS *) __attribute__((sysv_abi));
+typedef void (*kernel_entry_t)(unsigned int *, int, int, void *) __attribute__((sysv_abi));
 
+// Entry point of the boot loader.
 EFI_STATUS EFIAPI
 efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable)
 {
+	// Initialize some local variables.
 	EFI_FILE_PROTOCOL *vh, *fh;
 	EFI_STATUS efi_status;
 	UINT32 *fb;
 	void *buffer;
-	EFI_PHYSICAL_ADDRESS page_table_base = 0x0000000100000000ULL;
-	UINTN page_table_pages = EFI_SIZE_TO_PAGES(SIZE_8MB + SIZE_16KB + SIZE_8KB + SIZE_4KB);//One extra page for buffer. 2055 4kb pages
+	EFI_PHYSICAL_ADDRESS page_table_base = 0x0ULL;
+	UINTN page_table_pages = EFI_SIZE_TO_PAGES(SIZE_8MB + SIZE_16KB + SIZE_8KB + SIZE_4KB); //One extra page for buffer. 2055 4kb pages
 	UINTN file_size = 0;
 
+	// Set global variables.
 	ImageHandle = imageHandle;
 	SystemTable = systemTable;
 	BootServices = systemTable->BootServices;
 
-	efi_status = OpenKernel(&vh, &fh);
+	efi_status = OpenKernel(&vh, &fh); // Open the kernel file for reading.
 	if (EFI_ERROR(efi_status))
 	{
 		BootServices->Stall(5 * 1000000); // 5 seconds
 		return efi_status;
 	}
 
-	efi_status = ReadFileSize(fh, &file_size);
-	if (EFI_ERROR(efi_status))
-	{
-		BootServices->Stall(5 * 1000000); // 5 seconds0x0000000100000000ULL
-		return efi_status;
-	}
-
-	buffer = AllocatePool(file_size, EfiPersistentMemory);
-	efi_status = LoadKernel(fh, file_size, buffer);
+	efi_status = ReadFileSize(fh, &file_size); // Read the kernel file size.
 	if (EFI_ERROR(efi_status))
 	{
 		BootServices->Stall(5 * 1000000); // 5 seconds
 		return efi_status;
 	}
 
-	CloseKernel(vh, fh);
-
-	efi_status = AllocatePages(AllocateMaxAddress, EfiLoaderData, page_table_pages, &page_table_base);
+	buffer = AllocatePool(file_size, EfiPersistentMemory); // Allocate memory for loading the kernel.
+	efi_status = LoadKernel(fh, file_size, buffer); // Load the kernel binary into memory.
 	if (EFI_ERROR(efi_status))
 	{
 		BootServices->Stall(5 * 1000000); // 5 seconds
 		return efi_status;
 	}
 
-	fb = SetGraphicsMode(800, 600);
+	CloseKernel(vh, fh); // Close the kernel file.
 
-	// page_table_base = AllocatePool(page_table_size, EfiPersistentMemory);
-	// page_table_base = (void *) (((unsigned long long) page_table_base + 4095) & (~4095ULL));
+	// Allocate pages for the kernel to initialize page table.
+	efi_status = AllocatePages(AllocateAnyPages, EfiLoaderData, page_table_pages, &page_table_base);
+	if (EFI_ERROR(efi_status))
+	{
+		BootServices->Stall(5 * 1000000); // 5 seconds
+		return efi_status;
+	}
 
-	efi_status = ExitBootServicesHook(ImageHandle);
+	fb = SetGraphicsMode(800, 600); // Set the graphics mode to 800x600 BGRA.
+
+	efi_status = ExitBootServicesHook(ImageHandle); // Call ExitBootServices.
 	if (EFI_ERROR(efi_status))
 	{
 		BootServices->Stall(5 * 1000000); // 5 seconds
@@ -318,11 +339,8 @@ efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable)
 
 	// kernel's _start() is at base #0 (pure binary format)
 	// cast the function pointer appropriately and call the function
-
 	kernel_entry_t func = (kernel_entry_t)buffer;
-	func(fb, 800, 600, &page_table_base);
-
-	// FreePool(buffer);
+	func(fb, 800, 600, (void *)page_table_base); // call the kernel function.
 
 	return EFI_SUCCESS;
 }

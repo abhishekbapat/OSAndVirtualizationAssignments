@@ -5,6 +5,6 @@ typedef unsigned long long u64;
 
 #ifndef PAGETABLE_METHODS
 #define PAGETABLE_METHODS
-u64 page_table_init(unsigned int *);
+u64 page_table_init(void *);
 void write_cr3(u64);
 #endif

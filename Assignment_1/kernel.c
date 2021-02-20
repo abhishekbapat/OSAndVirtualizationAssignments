@@ -6,19 +6,17 @@
 
 #include "pagetable.h"
 
-//Declare the methods.
+// Declare the methods.
 void draw_rect(int, int, int, int, int, unsigned int *);
 
-void kernel_start(unsigned int *framebuffer, int width, int height, unsigned int *pt_base)
+// Kernel entry point.
+void kernel_start(unsigned int *framebuffer, int width, int height, void *pt_base)
 {
 	int colour = 0x2596beff;
 	int rectHeight = 200;
 	int rectWidth = 400;
 
 	u64 topAddr = page_table_init(pt_base);
-	topAddr &= 4096ULL;
-	topAddr <<= 12;
-	topAddr &= ~4096ULL;
 	write_cr3(topAddr);
 
 	draw_rect(colour, rectWidth, rectHeight, width, height, framebuffer);
@@ -43,7 +41,8 @@ void draw_rect(int colour, int rectWidth, int rectHeight, int width, int height,
 	}
 }
 
-u64 page_table_init(unsigned int *base)
+// Initialize 4-level page table to map 4gb memory.
+u64 page_table_init(void *base)
 {
 	unsigned int num_pte = 1048576;		   //hardcode for 4gb mapping with 4kB page size.
 	unsigned int num_pde = num_pte / 512;  // 2048
@@ -62,9 +61,7 @@ u64 page_table_init(unsigned int *base)
 	for (int j = 0; j < num_pde; j++)
 	{
 		u64 *pte_start = pte + 512 * j;
-		page_addr = (u64)pte_start >> 12;
-		page_addr <<= 12;
-		page_addr &= ~4096ULL;
+		page_addr = (u64)pte_start;
 		pde[j] = page_addr + 0x3;
 	}
 
@@ -72,9 +69,7 @@ u64 page_table_init(unsigned int *base)
 	for (int k = 0; k < num_pdpe; k++)
 	{
 		u64 *pde_start = pde + 512 * k;
-		page_addr = (u64)pde_start >> 12;
-		page_addr <<= 12;
-		page_addr &= ~4096ULL;
+		page_addr = (u64)pde_start;
 		pdpe[k] = page_addr + 0x3;
 	}
 	for (int k = num_pdpe; k < 512; k++)
@@ -86,9 +81,7 @@ u64 page_table_init(unsigned int *base)
 	for (int m = 0; m < num_pml4; m++)
 	{
 		u64 *pdpe_start = pdpe + 512 * m;
-		page_addr = (u64)pdpe_start >> 12;
-		page_addr <<= 12;
-		page_addr &= ~4096ULL;
+		page_addr = (u64)pdpe_start;
 		pml4e[m] = page_addr + 0x3;
 	}
 	for (int m = num_pml4; m < 512; m++)
@@ -96,9 +89,10 @@ u64 page_table_init(unsigned int *base)
 		pml4e[m] = 0x0ULL;
 	}
 
-	return ((u64)pte) >> 12;
+	return ((u64)pml4e);
 }
 
+// Write value to the cr3 register.
 void write_cr3(u64 cr3_value)
 {
 	asm volatile("mov %0, %%cr3" ::"r"(cr3_value)
