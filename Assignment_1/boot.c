@@ -1,3 +1,8 @@
+/*
+ * A UEFI bootloader implementation that loads a kernel binary into memory.
+ * Code written for ECE6504 OsAndVirtualization assignment 1.
+ * Code belongs to Abhishek Bapat. PID: abapat28.
+ */
 
 #include <Uefi.h>
 #include <Protocol/LoadedImage.h>
