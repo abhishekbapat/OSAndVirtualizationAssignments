@@ -60,8 +60,8 @@ static EFI_STATUS AllocatePages(EFI_ALLOCATE_TYPE type, EFI_MEMORY_TYPE memory_t
 	return efi_status;
 }
 
-// Opens the kernel file.
-static EFI_STATUS OpenKernel(EFI_FILE_PROTOCOL **pvh, EFI_FILE_PROTOCOL **pfh)
+// Opens the file.
+static EFI_STATUS OpenFile(EFI_FILE_PROTOCOL **pvh, EFI_FILE_PROTOCOL **pfh, CHAR16 *full_file_path)
 {
 	EFI_LOADED_IMAGE *li = NULL;
 	EFI_FILE_IO_INTERFACE *fio = NULL;
@@ -98,7 +98,7 @@ static EFI_STATUS OpenKernel(EFI_FILE_PROTOCOL **pvh, EFI_FILE_PROTOCOL **pfh)
 	}
 	vh = *pvh;
 
-	efi_status = vh->Open(vh, pfh, L"\\EFI\\BOOT\\KERNEL",
+	efi_status = vh->Open(vh, pfh, full_file_path,
 						  EFI_FILE_MODE_READ, 0);
 	if (EFI_ERROR(efi_status))
 	{
@@ -110,8 +110,8 @@ static EFI_STATUS OpenKernel(EFI_FILE_PROTOCOL **pvh, EFI_FILE_PROTOCOL **pfh)
 	return EFI_SUCCESS;
 }
 
-// Closer the kernel file.
-static void CloseKernel(EFI_FILE_PROTOCOL *vh, EFI_FILE_PROTOCOL *fh)
+// Closer the file handles.
+static void CloseFile(EFI_FILE_PROTOCOL *vh, EFI_FILE_PROTOCOL *fh)
 {
 	vh->Close(vh);
 	fh->Close(fh);
@@ -152,8 +152,8 @@ static EFI_STATUS ReadFileSize(EFI_FILE_PROTOCOL *fh, UINTN *file_size)
 	return efi_status;
 }
 
-// Loads the kernel binary into memory buffer from the file handle.
-static EFI_STATUS LoadKernel(EFI_FILE_PROTOCOL *fh, UINTN file_size, void *buffer)
+// Loads the binary file into memory buffer from the file handle.
+static EFI_STATUS LoadBinaryFileInBuffer(EFI_FILE_PROTOCOL *fh, UINTN file_size, void *buffer)
 {
 	EFI_STATUS efi_status;
 
@@ -161,7 +161,7 @@ static EFI_STATUS LoadKernel(EFI_FILE_PROTOCOL *fh, UINTN file_size, void *buffe
 	if (EFI_ERROR(efi_status))
 	{
 		SystemTable->ConOut->OutputString(SystemTable->ConOut,
-										  L"Cannot load KERNEL file.\r\n");
+										  L"Cannot load binary file in buffer.\r\n");
 	}
 	return efi_status;
 }
@@ -291,39 +291,49 @@ efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable)
 	EFI_FILE_PROTOCOL *vh, *fh;
 	EFI_STATUS efi_status;
 	UINT32 *fb;
-	void *buffer;
+	void *kernel_buffer;
+	//void *user_buffer;
 	EFI_PHYSICAL_ADDRESS page_table_base = 0x0ULL;
+	EFI_PHYSICAL_ADDRESS kernel_base = 0x0ULL;
+	//EFI_PHYSICAL_ADDRESS user_base = 0x0ULL;
 	UINTN page_table_pages = EFI_SIZE_TO_PAGES(SIZE_8MB + SIZE_16KB + SIZE_8KB + SIZE_4KB); //One extra page for buffer. 2055 4kb pages
-	UINTN file_size = 0;
+	UINTN kernel_file_size = 0;
 
 	// Set global variables.
 	ImageHandle = imageHandle;
 	SystemTable = systemTable;
 	BootServices = systemTable->BootServices;
 
-	efi_status = OpenKernel(&vh, &fh); // Open the kernel file for reading.
+	efi_status = OpenFile(&vh, &fh, L"\\EFI\\BOOT\\KERNEL"); // Open the kernel file for reading.
 	if (EFI_ERROR(efi_status))
 	{
 		BootServices->Stall(5 * 1000000); // 5 seconds
 		return efi_status;
 	}
 
-	efi_status = ReadFileSize(fh, &file_size); // Read the kernel file size.
+	efi_status = ReadFileSize(fh, &kernel_file_size); // Read the kernel file size.
 	if (EFI_ERROR(efi_status))
 	{
 		BootServices->Stall(5 * 1000000); // 5 seconds
 		return efi_status;
 	}
 
-	buffer = AllocatePool(file_size, EfiPersistentMemory); // Allocate memory for loading the kernel.
-	efi_status = LoadKernel(fh, file_size, buffer); // Load the kernel binary into memory.
+	efi_status = AllocatePages(AllocateAnyPages, EfiLoaderCode, EFI_SIZE_TO_PAGES(kernel_file_size), &kernel_base); // Page aligned memory for kernel.
+	if(EFI_ERROR(efi_status))
+	{
+		BootServices->Stall(5*1000000); // 5 seconds
+		return efi_status;
+	}
+	kernel_buffer = (void *)kernel_base;
+
+	efi_status = LoadBinaryFileInBuffer(fh, kernel_file_size, kernel_buffer); // Load the kernel binary into memory.
 	if (EFI_ERROR(efi_status))
 	{
 		BootServices->Stall(5 * 1000000); // 5 seconds
 		return efi_status;
 	}
 
-	CloseKernel(vh, fh); // Close the kernel file.
+	CloseFile(vh, fh); // Close the kernel file.
 
 	// Allocate pages for the kernel to initialize page table.
 	efi_status = AllocatePages(AllocateAnyPages, EfiLoaderData, page_table_pages, &page_table_base);
@@ -344,7 +354,7 @@ efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable)
 
 	// kernel's _start() is at base #0 (pure binary format)
 	// cast the function pointer appropriately and call the function
-	kernel_entry_t func = (kernel_entry_t)buffer;
+	kernel_entry_t func = (kernel_entry_t)kernel_buffer;
 	func(fb, 800, 600, (void *)page_table_base); // call the kernel function.
 
 	return EFI_SUCCESS;

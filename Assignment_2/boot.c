@@ -288,16 +288,17 @@ EFI_STATUS EFIAPI
 efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable)
 {
 	// Initialize some local variables.
-	EFI_FILE_PROTOCOL *kvh, *kfh;
+	EFI_FILE_PROTOCOL *kvh, *kfh, *uvh, *ufh;
 	EFI_STATUS efi_status;
 	UINT32 *fb;
 	void *kernel_buffer;
-	//void *user_buffer;
+	void *user_buffer;
 	EFI_PHYSICAL_ADDRESS page_table_base = 0x0ULL;
 	EFI_PHYSICAL_ADDRESS kernel_base = 0x0ULL;
-	//EFI_PHYSICAL_ADDRESS user_base = 0x0ULL;
+	EFI_PHYSICAL_ADDRESS user_base = 0x0ULL;
 	UINTN page_table_pages = EFI_SIZE_TO_PAGES(SIZE_8MB + SIZE_16KB + SIZE_8KB + SIZE_4KB); //One extra page for buffer. 2055 4kb pages
 	UINTN kernel_file_size = 0;
+	UINTN user_file_size = 0;
 
 	// Set global variables.
 	ImageHandle = imageHandle;
@@ -334,6 +335,37 @@ efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable)
 	}
 
 	CloseFile(kvh, kfh); // Close the kernel file.
+
+	efi_status = OpenFile(&uvh, &ufh, L"\\EFI\\BOOT\\USER"); // Open the kernel file for reading.
+	if (EFI_ERROR(efi_status))
+	{
+		BootServices->Stall(5 * 1000000); // 5 seconds
+		return efi_status;
+	}
+
+	efi_status = ReadFileSize(ufh, &user_file_size); // Read the kernel file size.
+	if (EFI_ERROR(efi_status))
+	{
+		BootServices->Stall(5 * 1000000); // 5 seconds
+		return efi_status;
+	}
+
+	efi_status = AllocatePages(AllocateAnyPages, EfiLoaderCode, EFI_SIZE_TO_PAGES(user_file_size), &user_base); // Page aligned memory for kernel.
+	if(EFI_ERROR(efi_status))
+	{
+		BootServices->Stall(5*1000000); // 5 seconds
+		return efi_status;
+	}
+	user_buffer = (void *)user_base;
+
+	efi_status = LoadBinaryFileInBuffer(ufh, user_file_size, user_buffer); // Load the kernel binary into memory.
+	if (EFI_ERROR(efi_status))
+	{
+		BootServices->Stall(5 * 1000000); // 5 seconds
+		return efi_status;
+	}
+
+	CloseFile(uvh, ufh); // Close the kernel file.
 
 	// Allocate pages for the kernel to initialize page table.
 	efi_status = AllocatePages(AllocateAnyPages, EfiLoaderData, page_table_pages, &page_table_base);
