@@ -21,6 +21,21 @@ static EFI_HANDLE ImageHandle;
 static EFI_SYSTEM_TABLE *SystemTable;
 static EFI_BOOT_SERVICES *BootServices;
 
+typedef struct information
+{
+	UINT64 kernel_stack_buffer;
+	UINT64 user_stack_buffer;
+	UINT64 kernel_pt_base;
+	UINT64 user_pt_base;
+	UINT64 user_app_buffer;
+	UINT32 num_user_ptes;
+	UINT32 num_user_pdes;
+	UINT32 num_user_pdpes;
+	UINT32 num_kernel_stack_pages;
+	UINT32 num_user_stack_pages;
+	UINT32 num_user_binary_pages;
+} information;
+
 // Wrapper method to allocate memory.
 static VOID *AllocatePool(UINTN size, EFI_MEMORY_TYPE memoryType)
 {
@@ -280,8 +295,22 @@ static EFI_STATUS ExitBootServicesHook(EFI_HANDLE imageHandle)
 	return efi_status;
 }
 
+static UINTN CalculateNumPagesUserPageTable(UINTN pages_for_user_binary, UINTN user_stack_pages, information *info)
+{
+	UINTN num_ptes, num_pdes, num_pdpes, num_pages;
+	num_ptes = pages_for_user_binary + user_stack_pages;
+	num_pdes = num_ptes / 512 + 1;
+	num_pdpes = num_pdes / 512 + 1;
+	info->num_user_ptes = num_ptes;
+	info->num_user_pdes = num_pdes;
+	info->num_user_pdpes = num_pdpes;
+
+	num_pages = EFI_SIZE_TO_PAGES(8 * num_ptes) + EFI_SIZE_TO_PAGES(8 * num_pdes) + EFI_SIZE_TO_PAGES(8 * num_pdpes);
+	return num_pages;
+}
+
 /* Use System V ABI rather than EFI/Microsoft ABI. */
-typedef void (*kernel_entry_t)(unsigned int *, int, int, void *) __attribute__((sysv_abi));
+typedef void (*kernel_entry_t)(void *, unsigned int *, unsigned int, unsigned int, information *) __attribute__((sysv_abi));
 
 // Entry point of the boot loader.
 EFI_STATUS EFIAPI
@@ -293,12 +322,22 @@ efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable)
 	UINT32 *fb;
 	void *kernel_buffer;
 	void *user_buffer;
-	EFI_PHYSICAL_ADDRESS page_table_base = 0x0ULL;
+	EFI_PHYSICAL_ADDRESS kernel_page_table_base = 0x0ULL;
+	EFI_PHYSICAL_ADDRESS user_page_table_base = 0x0ULL;
 	EFI_PHYSICAL_ADDRESS kernel_base = 0x0ULL;
 	EFI_PHYSICAL_ADDRESS user_base = 0x0ULL;
-	UINTN page_table_pages = EFI_SIZE_TO_PAGES(SIZE_8MB + SIZE_16KB + SIZE_8KB + SIZE_4KB); //One extra page for buffer. 2055 4kb pages
+	EFI_PHYSICAL_ADDRESS kernel_stack_base = 0x0ULL;
+	EFI_PHYSICAL_ADDRESS user_stack_base = 0x0ULL;
+	UINTN kernel_page_table_pages = EFI_SIZE_TO_PAGES(SIZE_8MB + SIZE_16KB + SIZE_8KB);
+	UINTN user_page_table_pages = 0;
 	UINTN kernel_file_size = 0;
 	UINTN user_file_size = 0;
+	UINTN pages_for_user_binary = 0;
+	UINTN kernel_stack_pages = 1;
+	UINTN user_stack_pages = 1;
+	information info;
+	info.num_user_stack_pages = user_stack_pages;
+	info.num_kernel_stack_pages = kernel_stack_pages;
 
 	// Set global variables.
 	ImageHandle = imageHandle;
@@ -320,9 +359,9 @@ efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable)
 	}
 
 	efi_status = AllocatePages(AllocateAnyPages, EfiLoaderCode, EFI_SIZE_TO_PAGES(kernel_file_size), &kernel_base); // Page aligned memory for kernel.
-	if(EFI_ERROR(efi_status))
+	if (EFI_ERROR(efi_status))
 	{
-		BootServices->Stall(5*1000000); // 5 seconds
+		BootServices->Stall(5 * 1000000); // 5 seconds
 		return efi_status;
 	}
 	kernel_buffer = (void *)kernel_base;
@@ -336,44 +375,63 @@ efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable)
 
 	CloseFile(kvh, kfh); // Close the kernel file.
 
-	efi_status = OpenFile(&uvh, &ufh, L"\\EFI\\BOOT\\USER"); // Open the kernel file for reading.
+	efi_status = OpenFile(&uvh, &ufh, L"\\EFI\\BOOT\\USER"); // Open the user application file for reading.
 	if (EFI_ERROR(efi_status))
 	{
 		BootServices->Stall(5 * 1000000); // 5 seconds
 		return efi_status;
 	}
 
-	efi_status = ReadFileSize(ufh, &user_file_size); // Read the kernel file size.
+	efi_status = ReadFileSize(ufh, &user_file_size); // Read the user file size.
 	if (EFI_ERROR(efi_status))
 	{
 		BootServices->Stall(5 * 1000000); // 5 seconds
 		return efi_status;
 	}
 
-	efi_status = AllocatePages(AllocateAnyPages, EfiLoaderCode, EFI_SIZE_TO_PAGES(user_file_size), &user_base); // Page aligned memory for kernel.
-	if(EFI_ERROR(efi_status))
+	pages_for_user_binary = EFI_SIZE_TO_PAGES(user_file_size);
+	info.num_user_binary_pages = pages_for_user_binary;
+	efi_status = AllocatePages(AllocateAnyPages, EfiLoaderCode, pages_for_user_binary, &user_base); // Page aligned memory for user app.
+	if (EFI_ERROR(efi_status))
 	{
-		BootServices->Stall(5*1000000); // 5 seconds
+		BootServices->Stall(5 * 1000000); // 5 seconds
 		return efi_status;
 	}
 	user_buffer = (void *)user_base;
 
-	efi_status = LoadBinaryFileInBuffer(ufh, user_file_size, user_buffer); // Load the kernel binary into memory.
+	efi_status = LoadBinaryFileInBuffer(ufh, user_file_size, user_buffer); // Load the user binary into memory.
 	if (EFI_ERROR(efi_status))
 	{
 		BootServices->Stall(5 * 1000000); // 5 seconds
 		return efi_status;
 	}
 
-	CloseFile(uvh, ufh); // Close the kernel file.
+	CloseFile(uvh, ufh); // Close the user file.
 
 	// Allocate pages for the kernel to initialize page table.
-	efi_status = AllocatePages(AllocateAnyPages, EfiLoaderData, page_table_pages, &page_table_base);
+	efi_status = AllocatePages(AllocateAnyPages, EfiLoaderData, kernel_page_table_pages, &kernel_page_table_base);
 	if (EFI_ERROR(efi_status))
 	{
 		BootServices->Stall(5 * 1000000); // 5 seconds
 		return efi_status;
 	}
+
+	user_page_table_pages = CalculateNumPagesUserPageTable(pages_for_user_binary, user_stack_pages, &info);
+	efi_status = AllocatePages(AllocateAnyPages, EfiLoaderData, user_page_table_pages, &user_page_table_base);
+	if (EFI_ERROR(efi_status))
+	{
+		BootServices->Stall(5 * 1000000); // 5 seconds
+		return efi_status;
+	}
+
+	efi_status = AllocatePages(AllocateAnyPages, EfiLoaderData, kernel_stack_pages + user_stack_pages, &kernel_stack_base);
+	if (EFI_ERROR(efi_status))
+	{
+		BootServices->Stall(5 * 1000000); // 5 seconds
+		return efi_status;
+	}
+	kernel_stack_base += 4096 * kernel_stack_pages;				   //Point to the end of the page as stack moves downwards.
+	user_stack_base = kernel_stack_base + 4096 * user_stack_pages; //Next buffer is user stack.
 
 	fb = SetGraphicsMode(800, 600); // Set the graphics mode to 800x600 BGRA.
 
@@ -384,10 +442,16 @@ efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable)
 		return efi_status;
 	}
 
+	info.kernel_stack_buffer = (UINT64)kernel_stack_base;
+	info.user_stack_buffer = (UINT64)user_stack_base;
+	info.kernel_pt_base = (UINT64)kernel_page_table_base;
+	info.user_pt_base = (UINT64)user_page_table_base;
+	info.user_app_buffer = (UINT64)user_buffer;
+
 	// kernel's _start() is at base #0 (pure binary format)
 	// cast the function pointer appropriately and call the function
 	kernel_entry_t func = (kernel_entry_t)kernel_buffer;
-	func(fb, 800, 600, (void *)page_table_base); // call the kernel function.
+	func((void *)kernel_stack_base, fb, 800, 600, &info); // call the kernel function.
 
 	return EFI_SUCCESS;
 }

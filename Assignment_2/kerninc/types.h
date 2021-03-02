@@ -12,8 +12,23 @@ typedef unsigned short uint16_t;
 typedef unsigned int uint32_t;
 typedef unsigned long long uint64_t;
 
-#define SIZE_MAX	0xFFFFFFFFFFFFFFFFULL
+#define SIZE_MAX 0xFFFFFFFFFFFFFFFFULL
 typedef long long intptr_t;
 typedef unsigned long long uintptr_t;
 
-#define NULL ((void *) 0)
+#define NULL ((void *)0)
+
+typedef struct information
+{
+    uintptr_t kernel_stack_buffer;
+    uintptr_t user_stack_buffer;
+    uintptr_t kernel_pt_base;
+    uintptr_t user_pt_base;
+    uintptr_t user_app_buffer;
+	uint32_t num_user_ptes;
+	uint32_t num_user_pdes;
+	uint32_t num_user_pdpes;
+	uint32_t num_kernel_stack_pages;
+	uint32_t num_user_stack_pages;
+	uint32_t num_user_binary_pages;
+} information;
