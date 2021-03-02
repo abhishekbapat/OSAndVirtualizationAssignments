@@ -16,21 +16,21 @@ void write_cr3(uintptr_t);
 // Kernel entry point.
 void kernel_start(void *kernel_stack_buffer, unsigned int *framebuffer, unsigned int width, unsigned int height, information *info)
 {
-	uintptr_t user_virt_addr = 0xFFFFFFFFC0001000; // Calculated manually according to the page table setup.
-	user_stack = (void *)info->user_stack_buffer;
+	fb_init(framebuffer, width, height);
+
+	uintptr_t user_app_virt_addr = 0xFFFFFFFFC0001000; // Calculated manually according to the page table setup.
+	uintptr_t user_stack_virt_addr = 0xFFFFFFFFC0001000;
+	user_stack = (void *)user_stack_virt_addr;
+
+	printf("Initializing page tables for kernel and user space!\n");
 	uintptr_t topAddr = page_table_init(*info);
 	write_cr3(topAddr);
 
-	fb_init(framebuffer, width, height);
+	printf("Initializing system calls!\n");
+	syscall_init();
 
-	printf("User stack pages: %d \n", info->num_user_stack_pages);
-	printf("Kernel pt base pointer: %p \n", info->kernel_pt_base);
-	printf("Framebuffer ptr: %p \n", framebuffer);
-	printf("Num user ptes: %d \n", info->num_user_ptes);
-	printf("Num user pdes: %d \n", info->num_user_pdes);
-	printf("Num user pdpes: %d \n", info->num_user_pdpes);
-	printf("User virtual addr: %p \n", (void *)user_virt_addr);
-	user_jump((void *)user_virt_addr);
+	printf("Jumping to user app!\n\n");
+	user_jump((void *)user_app_virt_addr);
 
 	/* Never exit! */
 	while (1)
@@ -48,16 +48,16 @@ uintptr_t page_table_init(information info)
 	unsigned int num_k_pdpe = num_k_pde / 512; // 4
 	unsigned int num_pml4 = num_k_pdpe / 4;	   // 1
 
-	uintptr_t *k_pte = (uintptr_t *)kernel_pt_base;
+	uint64_t *k_pte = (uint64_t *)kernel_pt_base;
 	for (unsigned int i = 0; i < num_k_pte; i++)
 	{
 		k_pte[i] = ((0x1000 * i) + 0x3);
 	}
 
-	uintptr_t *u_pte = (uintptr_t *)user_pt_base;
+	uint64_t *u_pte = (uint64_t *)user_pt_base;
 	for (unsigned int i = 0; i < info.num_user_stack_pages; i++)
 	{
-		u_pte[i] = (0x1000 * i) + (info.user_stack_buffer-4096) + 0x7;
+		u_pte[i] = (0x1000 * i) + (info.user_stack_buffer - (info.num_user_stack_pages * 0x1000)) + 0x7;
 	}
 	for (unsigned int i = info.num_user_stack_pages; i < info.num_user_ptes; i++)
 	{
@@ -69,20 +69,20 @@ uintptr_t page_table_init(information info)
 		u_pte[i] = 0x0ULL;
 	}
 
-	uintptr_t *k_pde = (uintptr_t *)(k_pte + num_k_pte);
-	uintptr_t page_addr;
+	uint64_t *k_pde = (uint64_t *)(k_pte + num_k_pte);
+	uint64_t page_addr;
 	for (int j = 0; j < num_k_pde; j++)
 	{
-		uintptr_t *pte_start = k_pte + 512 * j;
-		page_addr = (uintptr_t)pte_start;
+		uint64_t *pte_start = k_pte + 512 * j;
+		page_addr = (uint64_t)pte_start;
 		k_pde[j] = page_addr + 0x3;
 	}
 
-	uintptr_t *u_pde = (uintptr_t *)(u_pte + 512);
+	uint64_t *u_pde = (uint64_t *)(u_pte + 512);
 	for (int j = 0; j < info.num_user_pdes; j++)
 	{
-		uintptr_t *pte_start = u_pte + 512 * j;
-		page_addr = (uintptr_t)pte_start;
+		uint64_t *pte_start = u_pte + 512 * j;
+		page_addr = (uint64_t)pte_start;
 		u_pde[j] = page_addr + 0x7;
 	}
 	for (int j = info.num_user_pdes; j < 512; j++)
@@ -90,11 +90,11 @@ uintptr_t page_table_init(information info)
 		u_pde[j] = 0x0ULL;
 	}
 
-	uintptr_t *k_pdpe = (uintptr_t *)(k_pde + num_k_pde);
+	uint64_t *k_pdpe = (uint64_t *)(k_pde + num_k_pde);
 	for (int k = 0; k < num_k_pdpe; k++)
 	{
-		uintptr_t *pde_start = k_pde + 512 * k;
-		page_addr = (uintptr_t)pde_start;
+		uint64_t *pde_start = k_pde + 512 * k;
+		page_addr = (uint64_t)pde_start;
 		k_pdpe[k] = page_addr + 0x3;
 	}
 	for (int k = num_k_pdpe; k < 512; k++)
@@ -102,25 +102,25 @@ uintptr_t page_table_init(information info)
 		k_pdpe[k] = 0x0ULL;
 	}
 
-	uintptr_t *u_pdpe = (uintptr_t *)(u_pde + 512);
+	uint64_t *u_pdpe = (uint64_t *)(u_pde + 512);
 	for (int k = 0; k < 512 - info.num_user_pdpes; k++)
 	{
 		u_pdpe[k] = 0x0ULL;
 	}
-	u_pdpe[511] = (uintptr_t)(u_pde) + 0x7;
+	u_pdpe[511] = (uint64_t)(u_pde) + 0x7;
 
-	uintptr_t *pml4e = (uintptr_t *)(k_pdpe + 512);
+	uint64_t *pml4e = (uint64_t *)(k_pdpe + 512);
 	for (int m = 0; m < num_pml4; m++)
 	{
-		uintptr_t *pdpe_start = k_pdpe + 512 * m;
-		page_addr = (uintptr_t)pdpe_start;
+		uint64_t *pdpe_start = k_pdpe + 512 * m;
+		page_addr = (uint64_t)pdpe_start;
 		pml4e[m] = page_addr + 0x3;
 	}
 	for (int m = num_pml4; m < 511; m++)
 	{
 		pml4e[m] = 0x0ULL;
 	}
-	pml4e[511] = (uintptr_t)(u_pdpe) + 0x7;
+	pml4e[511] = (uint64_t)(u_pdpe) + 0x7;
 
 	return ((uintptr_t)pml4e);
 }
