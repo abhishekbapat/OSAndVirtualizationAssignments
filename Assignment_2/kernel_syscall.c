@@ -3,7 +3,7 @@
 #include <msr.h>
 #include <printf.h>
 
-void *kernel_stack; /* Initialized in kernel_entry.S */
+void *kernel_stack;		 /* Initialized in kernel_entry.S */
 void *user_stack = NULL; /* TODO: Must be initialized to a user stack region */
 
 void *syscall_entry_ptr; /* Points to syscall_entry(), initialized in kernel_entry.S; use that rather than syscall_entry() when obtaining its address */
@@ -25,7 +25,7 @@ void syscall_init(void)
 	wrmsr(MSR_EFER, rdmsr(MSR_EFER) | 0x1);
 
 	/* GDT descriptors for SYSCALL/SYSRET (USER descriptors are implicit) */
-	wrmsr(MSR_STAR, ((uint64_t) GDT_KERNEL_DATA << 48) | ((uint64_t) GDT_KERNEL_CODE << 32));
+	wrmsr(MSR_STAR, ((uint64_t)GDT_KERNEL_DATA << 48) | ((uint64_t)GDT_KERNEL_CODE << 32));
 
 	/* register a system call entry point */
 	wrmsr(MSR_LSTAR, (uint64_t)syscall_entry_ptr);
