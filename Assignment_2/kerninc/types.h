@@ -18,7 +18,7 @@ typedef unsigned long long uintptr_t;
 
 #define NULL ((void *)0)
 
-typedef struct information
+typedef struct information // This struct is used while passing information from bootloader to kernel.
 {
 	uintptr_t kernel_stack_buffer;
 	uintptr_t user_stack_buffer;

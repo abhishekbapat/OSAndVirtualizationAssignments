@@ -1,7 +1,6 @@
 /*
- * This kernel initializes a 4gb page table mapping for the amd64 architecture.
- * All values are hardcoded accordingly.
- * After page table initialization, this kernel draws a rectanlge in the video frambuffer passed by the bootloader.
+ * This kernel initializes a 4gb page table 1:1 mapping for the kernel space.
+ * Then it maps the last 1gb for user space.
  */
 
 #include <fb.h>
@@ -19,18 +18,18 @@ void kernel_start(void *kernel_stack_buffer, unsigned int *framebuffer, unsigned
 	fb_init(framebuffer, width, height);
 
 	uintptr_t user_app_virt_addr = 0xFFFFFFFFC0001000; // Calculated manually according to the page table setup.
-	uintptr_t user_stack_virt_addr = 0xFFFFFFFFC0001000;
-	user_stack = (void *)user_stack_virt_addr;
+	uintptr_t user_stack_virt_addr = 0xFFFFFFFFC0001000; // Same as above because stack is mapped before user_app in virtual mem. As stack moves downwards we shift by 4096.
+	user_stack = (void *)user_stack_virt_addr; // Initialize user stack.
 
 	printf("Initializing page tables for kernel and user space!\n");
-	uintptr_t topAddr = page_table_init(*info);
-	write_cr3(topAddr);
+	uintptr_t topAddr = page_table_init(*info); // Initialize page tables.
+	write_cr3(topAddr); // Pass the base pml4e to cr3.
 
 	printf("Initializing system calls!\n");
-	syscall_init();
+	syscall_init(); // Initialize system calls (syscall/sysret).
 
 	printf("Jumping to user app!\n\n");
-	user_jump((void *)user_app_virt_addr);
+	user_jump((void *)user_app_virt_addr); // Just to user app in virtual space.
 
 	/* Never exit! */
 	while (1)
@@ -38,7 +37,11 @@ void kernel_start(void *kernel_stack_buffer, unsigned int *framebuffer, unsigned
 	};
 }
 
-// Initialize 4-level page table to map 4gb memory.
+/* Initialize 4-level page table to map 4gb memory for the kernel-space.
+ * User space will be mapped in the top 1 gb.
+ * The only caveat is if user_stack + user_app size is > 2mb it will fail as we will need more than 512 ptes.
+ * But for the purpose of the assignment, the logic works.
+ */
 uintptr_t page_table_init(information info)
 {
 	void *kernel_pt_base = (void *)info.kernel_pt_base;
@@ -85,7 +88,7 @@ uintptr_t page_table_init(information info)
 		page_addr = (uint64_t)pte_start;
 		u_pde[j] = page_addr + 0x7;
 	}
-	for (int j = info.num_user_pdes; j < 512; j++)
+	for (int j = info.num_user_pdes; j < 512; j++) // Assuming num_user_pdes will be lesser than 512.
 	{
 		u_pde[j] = 0x0ULL;
 	}
@@ -107,7 +110,7 @@ uintptr_t page_table_init(information info)
 	{
 		u_pdpe[k] = 0x0ULL;
 	}
-	u_pdpe[511] = (uint64_t)(u_pde) + 0x7;
+	u_pdpe[511] = (uint64_t)(u_pde) + 0x7; // Topmost entry here corresponds to last 1gb in virtual address space.
 
 	uint64_t *pml4e = (uint64_t *)(k_pdpe + 512);
 	for (int m = 0; m < num_pml4; m++)
@@ -120,7 +123,7 @@ uintptr_t page_table_init(information info)
 	{
 		pml4e[m] = 0x0ULL;
 	}
-	pml4e[511] = (uint64_t)(u_pdpe) + 0x7;
+	pml4e[511] = (uint64_t)(u_pdpe) + 0x7; // Topmost entry here corresponds to last 1gb in virtual address space.
 
 	return ((uintptr_t)pml4e);
 }

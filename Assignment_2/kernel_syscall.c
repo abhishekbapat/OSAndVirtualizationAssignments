@@ -3,19 +3,25 @@
 #include <msr.h>
 #include <printf.h>
 
-void *kernel_stack;		 /* Initialized in kernel_entry.S */
-void *user_stack = NULL; /* TODO: Must be initialized to a user stack region */
+void *kernel_stack; /* Initialized in kernel_entry.S */
+void *user_stack = NULL; /* Initialized in kernel.c */
 
 void *syscall_entry_ptr; /* Points to syscall_entry(), initialized in kernel_entry.S; use that rather than syscall_entry() when obtaining its address */
 
 long do_syscall_entry(long n, long a1, long a2, long a3, long a4, long a5)
 {
-	// TODO: a system call handler
-	// the system call number is in 'n'
-	// make sure it is valid
-	if (n != 0) // Handle only 0 for now which means write in our case.
+	if (n == 0) // Handle only 0 for now which means write in our case.
+	{
+		printf((char *)a1);
+	}
+	else if (n == 1)
+	{
+		printf("The passed variable has the following value: %d \n", a1);
+	}
+	else
+	{
 		return -1;
-	printf((char *)a1);
+	}
 	return 0; /* Success */
 }
 

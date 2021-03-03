@@ -5,16 +5,14 @@
 
 #include <syscall.h>
 
-long make_syscall(long, long, long, long, long, long);
-
 void user_start(void)
 {
-	long call_type = 1; // 0 = write.
+	const long call_type_print_message = 0; // 0 = print string associated with arg passed.
+	const long call_type_print_value = 1; // 1 = print the value passed as is.
+	const int temp = 100;
 	const char *message1 = "Hello this is syscall1.\n";
-	const char *message2 = "Hello this is syscall2.\n";
-
-	__syscall1(call_type, (long)message1);
-	__syscall1(call_type, (long)message2);
+	__syscall1(call_type_print_message, (long)message1);
+	__syscall1(call_type_print_value, temp);
 
 	/* Never exit */
 	while (1)

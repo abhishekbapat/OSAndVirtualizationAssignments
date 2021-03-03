@@ -21,6 +21,7 @@ static EFI_HANDLE ImageHandle;
 static EFI_SYSTEM_TABLE *SystemTable;
 static EFI_BOOT_SERVICES *BootServices;
 
+/* This struct holds info passed to the kernel*/
 typedef struct information
 {
 	UINT64 kernel_stack_buffer;
@@ -295,6 +296,7 @@ static EFI_STATUS ExitBootServicesHook(EFI_HANDLE imageHandle)
 	return efi_status;
 }
 
+// Calculate the number of pages required for user page table based on the user_binary and user_stack size.
 static UINTN CalculateNumPagesUserPageTable(UINTN pages_for_user_binary, UINTN user_stack_pages, information *info)
 {
 	UINTN num_ptes, num_pdes, num_pdpes, num_pages;
@@ -389,7 +391,7 @@ efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable)
 		return efi_status;
 	}
 
-	pages_for_user_binary = EFI_SIZE_TO_PAGES(user_file_size);
+	pages_for_user_binary = EFI_SIZE_TO_PAGES(user_file_size); // Number of pages to fit the user app binary.
 	info.num_user_binary_pages = pages_for_user_binary;
 	efi_status = AllocatePages(AllocateAnyPages, EfiLoaderCode, pages_for_user_binary, &user_base); // Page aligned memory for user app.
 	if (EFI_ERROR(efi_status))
@@ -416,15 +418,15 @@ efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable)
 		return efi_status;
 	}
 
-	user_page_table_pages = CalculateNumPagesUserPageTable(pages_for_user_binary, user_stack_pages, &info);
-	efi_status = AllocatePages(AllocateAnyPages, EfiLoaderData, user_page_table_pages, &user_page_table_base);
+	user_page_table_pages = CalculateNumPagesUserPageTable(pages_for_user_binary, user_stack_pages, &info);	   // Calc the pages req for user page table setup.
+	efi_status = AllocatePages(AllocateAnyPages, EfiLoaderData, user_page_table_pages, &user_page_table_base); // Allocate 4kb aligned memory for the user page table.
 	if (EFI_ERROR(efi_status))
 	{
 		BootServices->Stall(5 * 1000000); // 5 seconds
 		return efi_status;
 	}
 
-	efi_status = AllocatePages(AllocateAnyPages, EfiLoaderData, kernel_stack_pages + user_stack_pages, &kernel_stack_base);
+	efi_status = AllocatePages(AllocateAnyPages, EfiLoaderData, kernel_stack_pages + user_stack_pages, &kernel_stack_base); // Allocate 4kb aligned memory for user and kernel stack.
 	if (EFI_ERROR(efi_status))
 	{
 		BootServices->Stall(5 * 1000000); // 5 seconds
