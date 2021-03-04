@@ -28,6 +28,7 @@ typedef struct information // This struct is used while passing information from
 	uint32_t num_user_ptes;
 	uint32_t num_user_pdes;
 	uint32_t num_user_pdpes;
+	uint32_t num_user_pml4es;
 	uint32_t num_kernel_stack_pages;
 	uint32_t num_user_stack_pages;
 	uint32_t num_user_binary_pages;

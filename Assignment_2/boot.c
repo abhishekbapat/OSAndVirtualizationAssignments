@@ -32,6 +32,7 @@ typedef struct information
 	UINT32 num_user_ptes;
 	UINT32 num_user_pdes;
 	UINT32 num_user_pdpes;
+	UINT32 num_user_pml4es;
 	UINT32 num_kernel_stack_pages;
 	UINT32 num_user_stack_pages;
 	UINT32 num_user_binary_pages;
@@ -299,15 +300,17 @@ static EFI_STATUS ExitBootServicesHook(EFI_HANDLE imageHandle)
 // Calculate the number of pages required for user page table based on the user_binary and user_stack size.
 static UINTN CalculateNumPagesUserPageTable(UINTN pages_for_user_binary, UINTN user_stack_pages, information *info)
 {
-	UINTN num_ptes, num_pdes, num_pdpes, num_pages;
+	UINTN num_ptes, num_pdes, num_pdpes, num_pml4es, num_pages;
 	num_ptes = pages_for_user_binary + user_stack_pages;
 	num_pdes = num_ptes / 512 + 1;
 	num_pdpes = num_pdes / 512 + 1;
+	num_pml4es = num_pdpes / 512 + 1;
 	info->num_user_ptes = num_ptes;
 	info->num_user_pdes = num_pdes;
 	info->num_user_pdpes = num_pdpes;
+	info->num_user_pml4es = num_pml4es;
 
-	num_pages = EFI_SIZE_TO_PAGES(8 * num_ptes) + EFI_SIZE_TO_PAGES(8 * num_pdes) + EFI_SIZE_TO_PAGES(8 * num_pdpes);
+	num_pages = EFI_SIZE_TO_PAGES(8 * num_ptes) + EFI_SIZE_TO_PAGES(8 * num_pdes) + EFI_SIZE_TO_PAGES(8 * num_pdpes) + EFI_SIZE_TO_PAGES(8 * num_pml4es);
 	return num_pages;
 }
 
