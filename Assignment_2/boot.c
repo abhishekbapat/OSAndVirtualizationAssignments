@@ -150,7 +150,7 @@ static EFI_STATUS ReadFileSize(EFI_FILE_PROTOCOL *fh, UINTN *file_size)
 	else
 	{
 		SystemTable->ConOut->OutputString(SystemTable->ConOut,
-										  L"Cannot get file size for KERNEL.\r\n");
+										  L"Cannot get file size.\r\n");
 		return efi_status;
 	}
 
@@ -158,7 +158,7 @@ static EFI_STATUS ReadFileSize(EFI_FILE_PROTOCOL *fh, UINTN *file_size)
 	if (EFI_ERROR(efi_status))
 	{
 		SystemTable->ConOut->OutputString(SystemTable->ConOut,
-										  L"Cannot get file KERNEL file info.\r\n");
+										  L"Cannot get file info.\r\n");
 	}
 	else
 	{
@@ -178,7 +178,7 @@ static EFI_STATUS LoadBinaryFileInBuffer(EFI_FILE_PROTOCOL *fh, UINTN file_size,
 	if (EFI_ERROR(efi_status))
 	{
 		SystemTable->ConOut->OutputString(SystemTable->ConOut,
-										  L"Cannot load KERNEL file.\r\n");
+										  L"Cannot load binary file.\r\n");
 	}
 	return efi_status;
 }
@@ -340,14 +340,16 @@ efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable)
 	UINTN pages_for_user_binary = 0;
 	UINTN kernel_stack_pages = 1;
 	UINTN user_stack_pages = 1;
-	information info;
-	info.num_user_stack_pages = user_stack_pages;
-	info.num_kernel_stack_pages = kernel_stack_pages;
+	information* info;
 
 	// Set global variables.
 	ImageHandle = imageHandle;
 	SystemTable = systemTable;
 	BootServices = systemTable->BootServices;
+
+	info = (information *)AllocatePool(sizeof(information), EfiLoaderData);
+	info->num_user_stack_pages = user_stack_pages;
+	info->num_kernel_stack_pages = kernel_stack_pages;
 
 	efi_status = OpenFile(&kvh, &kfh, L"\\EFI\\BOOT\\KERNEL"); // Open the kernel file for reading.
 	if (EFI_ERROR(efi_status))
@@ -395,7 +397,7 @@ efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable)
 	}
 
 	pages_for_user_binary = EFI_SIZE_TO_PAGES(user_file_size); // Number of pages to fit the user app binary.
-	info.num_user_binary_pages = pages_for_user_binary;
+	info->num_user_binary_pages = pages_for_user_binary;
 	efi_status = AllocatePages(AllocateAnyPages, EfiLoaderCode, pages_for_user_binary, &user_base); // Page aligned memory for user app.
 	if (EFI_ERROR(efi_status))
 	{
@@ -421,7 +423,7 @@ efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable)
 		return efi_status;
 	}
 
-	user_page_table_pages = CalculateNumPagesUserPageTable(pages_for_user_binary, user_stack_pages, &info);	   // Calc the pages req for user page table setup.
+	user_page_table_pages = CalculateNumPagesUserPageTable(pages_for_user_binary, user_stack_pages, info);	   // Calc the pages req for user page table setup.
 	efi_status = AllocatePages(AllocateAnyPages, EfiLoaderData, user_page_table_pages, &user_page_table_base); // Allocate 4kb aligned memory for the user page table.
 	if (EFI_ERROR(efi_status))
 	{
@@ -447,16 +449,16 @@ efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable)
 		return efi_status;
 	}
 
-	info.kernel_stack_buffer = (UINT64)kernel_stack_base;
-	info.user_stack_buffer = (UINT64)user_stack_base;
-	info.kernel_pt_base = (UINT64)kernel_page_table_base;
-	info.user_pt_base = (UINT64)user_page_table_base;
-	info.user_app_buffer = (UINT64)user_buffer;
+	info->kernel_stack_buffer = (UINT64)kernel_stack_base;
+	info->user_stack_buffer = (UINT64)user_stack_base;
+	info->kernel_pt_base = (UINT64)kernel_page_table_base;
+	info->user_pt_base = (UINT64)user_page_table_base;
+	info->user_app_buffer = (UINT64)user_buffer;
 
 	// kernel's _start() is at base #0 (pure binary format)
 	// cast the function pointer appropriately and call the function
 	kernel_entry_t func = (kernel_entry_t)kernel_buffer;
-	func((void *)kernel_stack_base, fb, 800, 600, &info); // call the kernel function.
+	func((void *)kernel_stack_base, fb, 800, 600, info); // call the kernel function.
 
 	return EFI_SUCCESS;
 }
