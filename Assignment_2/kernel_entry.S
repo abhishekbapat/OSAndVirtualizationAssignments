@@ -3,11 +3,15 @@
  * Copyright 2021 Ruslan Nikolaev <rnikola@vt.edu>
  */
 
-.global _start
+.global _start, gdt
 
 .code64
 _start:
 	cli							/* disable interrupts */
+
+	movb $0xFF, %al				/* disable PIC */
+	outb %al, $0xA1
+	outb %al, $0x21
 
 	leaq gdt(%rip), %rax		/* place the 'gdt' address */
 	movq %rax, gdt_ptr+2(%rip)  /* into 'gdt_ptr' */
@@ -40,7 +44,7 @@ gdt:
 	.quad 0x00af9b000000ffff	/* KERNEL code (64-bit) */
 	.quad 0x00cf93000000ffff	/* KERNEL data (64-bit) */
 	.quad 0x00cff3000000ffff	/* USER data (64-bit) */
-	.quad 0x00af9b000000ffff	/* USER code (64-bit) */
+	.quad 0x00affb000000ffff	/* USER code (64-bit) */
 	/* Please do *NOT* rearrange or move the above entries
 	   due to the assumptions of SYSCALL/SYSRET!
 	   But you can add other entries after them! */

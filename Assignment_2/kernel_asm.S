@@ -3,7 +3,7 @@
  * Copyright 2021 Ruslan Nikolaev <rnikola@vt.edu>
  */
 
-.global syscall_entry, user_jump
+.global syscall_entry, user_jump, pagefault_trap, default_trap
 .code64
 
 .align 64
@@ -52,3 +52,50 @@ user_jump:
 	movq %rdi, %rcx /* Will be used for the instruction pointer by sysret */
 	movq user_stack(%rip), %rsp
 	sysretq
+
+/*
+ * These macros save and restore volatile registers
+ * (assuming you do not modify any other registers except
+ * as used by the C calling convention).
+ */
+#define SAVE_REGS					 \
+	pushq %rax						;\
+	pushq %rcx						;\
+	pushq %rdx						;\
+	pushq %rdi						;\
+	pushq %rsi						;\
+	pushq %r8						;\
+	pushq %r9						;\
+	pushq %r10						;\
+	pushq %r11
+
+#define RESTORE_REGS				 \
+	popq %r11						;\
+	popq %r10						;\
+	popq %r9						;\
+	popq %r8						;\
+	popq %rsi						;\
+	popq %rdi						;\
+	popq %rdx						;\
+	popq %rcx						;\
+	popq %rax
+
+.align 64
+.type default_trap,%function
+default_trap:
+	cli
+	SAVE_REGS
+	/* TODO: Do something here */
+	RESTORE_REGS
+	hlt
+
+.align 64
+.type pagefault_trap,%function
+pagefault_trap:
+	cli
+	SAVE_REGS
+	/* TODO: Do something here */
+	RESTORE_REGS
+	sti
+	addq $8, %rsp	/* skip the page-fault error code */
+	iretq
