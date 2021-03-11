@@ -25,6 +25,8 @@ typedef struct information // This struct is used while passing information from
 	uintptr_t kernel_pt_base;
 	uintptr_t user_pt_base;
 	uintptr_t user_app_buffer;
+	uintptr_t tss_stack_buffer;
+	uintptr_t tss_segment_buffer;
 	uint32_t num_user_ptes;
 	uint32_t num_user_pdes;
 	uint32_t num_user_pdpes;

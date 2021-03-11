@@ -29,6 +29,8 @@ typedef struct information
 	UINT64 kernel_pt_base;
 	UINT64 user_pt_base;
 	UINT64 user_app_buffer;
+	UINT64 tss_stack_buffer;
+	UINT64 tss_segment_buffer;
 	UINT32 num_user_ptes;
 	UINT32 num_user_pdes;
 	UINT32 num_user_pdpes;
@@ -333,6 +335,8 @@ efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable)
 	EFI_PHYSICAL_ADDRESS user_base = 0x0ULL;
 	EFI_PHYSICAL_ADDRESS kernel_stack_base = 0x0ULL;
 	EFI_PHYSICAL_ADDRESS user_stack_base = 0x0ULL;
+	EFI_PHYSICAL_ADDRESS tss_segment_base = 0x0ULL;
+	EFI_PHYSICAL_ADDRESS tss_stack_base = 0x0ULL;
 	UINTN kernel_page_table_pages = EFI_SIZE_TO_PAGES(SIZE_8MB + SIZE_16KB + SIZE_8KB);
 	UINTN user_page_table_pages = 0;
 	UINTN kernel_file_size = 0;
@@ -431,6 +435,15 @@ efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable)
 		return efi_status;
 	}
 
+	efi_status = AllocatePages(AllocateAnyPages, EfiLoaderData, 2, &tss_stack_base); // Allocate 4kb alignmed memory for tss_segment and tss_stack
+	if (EFI_ERROR(efi_status))
+	{
+		BootServices->Stall(5 * 1000000); // 5 seconds
+		return efi_status;
+	}
+	tss_stack_base += 4096; //Stack moves downwards
+	tss_segment_base = tss_stack_base; // Same base location as stack but moves upwards
+
 	efi_status = AllocatePages(AllocateAnyPages, EfiLoaderData, kernel_stack_pages + user_stack_pages, &kernel_stack_base); // Allocate 4kb aligned memory for user and kernel stack.
 	if (EFI_ERROR(efi_status))
 	{
@@ -454,6 +467,8 @@ efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable)
 	info->kernel_pt_base = (UINT64)kernel_page_table_base;
 	info->user_pt_base = (UINT64)user_page_table_base;
 	info->user_app_buffer = (UINT64)user_buffer;
+	info->tss_segment_buffer = (UINT64)tss_segment_base;
+	info->tss_stack_buffer = (UINT64)tss_stack_base;
 
 	// kernel's _start() is at base #0 (pure binary format)
 	// cast the function pointer appropriately and call the function

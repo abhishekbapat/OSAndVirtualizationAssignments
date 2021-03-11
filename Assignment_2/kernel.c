@@ -7,11 +7,13 @@
 #include <printf.h>
 #include <types.h>
 #include <kernel_syscall.h>
+#include <interrupts.h>
 
 // Declare the methods.
 uintptr_t page_table_init_kernel(information);
 uintptr_t page_table_init_user(information, uintptr_t);
 void write_cr3(uintptr_t);
+void tss_segment_init(information);
 
 // Kernel entry point.
 void kernel_start(void *kernel_stack_buffer, unsigned int *framebuffer, unsigned int width, unsigned int height, information *info)
@@ -30,6 +32,9 @@ void kernel_start(void *kernel_stack_buffer, unsigned int *framebuffer, unsigned
 	printf("Initializing system calls!\n");
 	syscall_init(); // Initialize system calls (syscall/sysret).
 
+	printf("Initialize task state segment for cpu 0\n");
+	tss_segment_init(*info); // Initialize task state segment.
+
 	printf("Jumping to user app!\n\n");
 	user_jump((void *)user_app_virt_addr); // Just to user app in virtual space.
 
@@ -39,6 +44,20 @@ void kernel_start(void *kernel_stack_buffer, unsigned int *framebuffer, unsigned
 	};
 }
 
+/*
+ * Sets the tss stack pointer rsp0.
+ * Passes the gdt tss offset value for initialization. 
+ */
+void tss_segment_init(information info)
+{
+	uint16_t tss_offset = 0x28;
+	tss_segment_t *tss_segment = (tss_segment_t *)info.tss_segment_buffer;
+	__builtin_memset((void *)tss_segment, 0x0, sizeof(tss_segment_t));
+	uint64_t tss_stack = (uint64_t)info.tss_stack_buffer;
+	tss_segment->rsp[0] = tss_stack;
+	tss_segment->iopb_base = sizeof(tss_segment_t);
+	load_tss_segment(tss_offset, tss_segment);
+}
 
 /*
  * Initialize 4-level page table to map top 1gb memory for the user-space and reuse bottom 4gb of kernel-space.

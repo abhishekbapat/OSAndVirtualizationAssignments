@@ -45,6 +45,8 @@ gdt:
 	.quad 0x00cf93000000ffff	/* KERNEL data (64-bit) */
 	.quad 0x00cff3000000ffff	/* USER data (64-bit) */
 	.quad 0x00affb000000ffff	/* USER code (64-bit) */
+	.quad 0x0000000000000000	/* TSS Reserved Entry 1 */
+	.quad 0x0000000000000000	/* TSS Reserved Entry 2 */
 	/* Please do *NOT* rearrange or move the above entries
 	   due to the assumptions of SYSCALL/SYSRET!
 	   But you can add other entries after them! */
