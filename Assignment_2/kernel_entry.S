@@ -32,6 +32,12 @@ _start:
 	leaq syscall_entry(%rip), %rax	/* syscall_entry_ptr -> syscall_entry() */
 	movq %rax, syscall_entry_ptr(%rip)
 
+	leaq default_trap(%rip), %rax /* default_interrupt_handler_ptr -> default_trap() */
+	movq %rax, default_interrupt_handler_ptr(%rip)
+
+	leaq pagefault_trap(%rip), %rax /* page_fault_handler_ptr -> pagefault_trap() */
+	movq %rax, page_fault_handler_ptr(%rip)
+
 	leaq kernel_start(%rip), %rax
 	pushq $0x08
 	pushq %rax

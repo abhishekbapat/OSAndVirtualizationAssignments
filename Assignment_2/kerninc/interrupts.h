@@ -2,6 +2,11 @@
 
 #include <types.h>
 
+#define IDT_TABLE_SIZE 256
+#define NUM_CPU_EXCEPTIONS 32
+
+#define PAGE_FAULT_IDT_INDEX 14
+
 /* GDT, see kernel_entry.S */
 extern uint64_t gdt[];
 
@@ -30,6 +35,22 @@ struct idt_pointer {
 
 typedef struct idt_pointer idt_pointer_t;
 
+struct idt_entry_struct {
+    uint16_t offset_1;
+    uint16_t selector;
+    uint8_t ist;
+    uint8_t type_attr;
+    uint16_t offset_2;
+    uint32_t offset_3;
+    uint32_t reserved;
+} __attribute__((packed));
+
+typedef struct idt_entry_struct idt_entry_t;
+
+idt_entry_t idt[IDT_TABLE_SIZE] __attribute__((aligned(16))); //IDT, declared in kernel entry
+
+idt_pointer_t idt_ptr; // The IDT pointer
+
 static inline void load_idt(idt_pointer_t *idtp)
 {
 	__asm__ __volatile__ ("lidt %0; sti" /* also enable interrupts */
@@ -37,6 +58,9 @@ static inline void load_idt(idt_pointer_t *idtp)
 		: "m" (*idtp)
 	);
 }
+
+void idt_init();
+void set_idt_entry(uint8_t, uint64_t, uint16_t, uint8_t);
 
 /*
  * TSS segment, see also https://wiki.osdev.org/Task_State_Segment

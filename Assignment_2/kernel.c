@@ -15,25 +15,35 @@ uintptr_t page_table_init_user(information, uintptr_t);
 void write_cr3(uintptr_t);
 void tss_segment_init(information);
 
+void *default_interrupt_handler_ptr;
+void *page_fault_handler_ptr;
+
 // Kernel entry point.
 void kernel_start(void *kernel_stack_buffer, unsigned int *framebuffer, unsigned int width, unsigned int height, information *info)
 {
 	fb_init(framebuffer, width, height);
 
-	uintptr_t user_app_virt_addr = 0xFFFFFFFFC0001000; // Calculated manually according to the page table setup.
+	uintptr_t user_app_virt_addr = 0xFFFFFFFFC0001000;	 // Calculated manually according to the page table setup.
 	uintptr_t user_stack_virt_addr = 0xFFFFFFFFC0001000; // Same as above because stack is mapped before user_app in virtual mem. As stack moves downwards we shift by 4096.
-	user_stack = (void *)user_stack_virt_addr; // Initialize user stack.
+	user_stack = (void *)user_stack_virt_addr;			 // Initialize user stack.
+
+	printf("Kernel Stack: %p\n", kernel_stack);
+	printf("User Stack: %p\n", user_stack);
 
 	printf("Initializing page tables for kernel and user space!\n");
-	uintptr_t k_pml4e_base = page_table_init_kernel(*info); // Initialize kernel page tables.
+	uintptr_t k_pml4e_base = page_table_init_kernel(*info);				// Initialize kernel page tables.
 	uintptr_t u_pml4e_base = page_table_init_user(*info, k_pml4e_base); // Initialize user page tables.
-	write_cr3(u_pml4e_base); // Pass the base pml4e to cr3.
+	write_cr3(u_pml4e_base);											// Pass the base pml4e to cr3.
 
 	printf("Initializing system calls!\n");
 	syscall_init(); // Initialize system calls (syscall/sysret).
 
-	printf("Initialize task state segment for cpu 0\n");
+	printf("Initialize task state segment for cpu 0!\n");
 	tss_segment_init(*info); // Initialize task state segment.
+	printf("TSS Stack: %p\n", (void *)info->tss_stack_buffer);
+
+	printf("Initializing Interrupt Desciptor Table!\n");
+	idt_init();
 
 	printf("Jumping to user app!\n\n");
 	user_jump((void *)user_app_virt_addr); // Just to user app in virtual space.
@@ -42,6 +52,40 @@ void kernel_start(void *kernel_stack_buffer, unsigned int *framebuffer, unsigned
 	while (1)
 	{
 	};
+}
+
+/*
+ * Initializes the Interrupt Descriptor Table.
+ */
+void idt_init()
+{
+	idt_ptr.base = (uint64_t)idt;
+	idt_ptr.limit = sizeof(idt_entry_t) * IDT_TABLE_SIZE - 1;
+
+	for (int i = 0; i < NUM_CPU_EXCEPTIONS; i++) // Set the default handler pointer for the first 32 IDT entries.
+	{
+		set_idt_entry(i, (uint64_t)default_interrupt_handler_ptr, (uint16_t)0x8, (uint8_t)0xE);
+	}
+
+	for (int i = NUM_CPU_EXCEPTIONS; i < IDT_TABLE_SIZE; i++) // Initialize all other IDT entries to point to addr 0x0ULL.
+	{
+		set_idt_entry(i, (uint64_t)0x0ULL, (uint16_t)0x8, (uint8_t)0xE);
+	}
+
+	//set_idt_entry(PAGE_FAULT_IDT_INDEX, (uint64_t)page_fault_handler_ptr, (uint16_t)0x8, (uint8_t)0xE); // Initialize page fault handler.
+
+	load_idt(&idt_ptr);
+}
+
+void set_idt_entry(uint8_t entry_num, uint64_t addr, uint16_t selector, uint8_t type_attr)
+{
+	idt[entry_num].offset_1 = (uint16_t)addr & 0xFFFF;
+	idt[entry_num].selector = selector;
+	idt[entry_num].ist = 0;
+	idt[entry_num].type_attr = type_attr;
+	idt[entry_num].offset_2 = (uint16_t)((addr >> 16) & 0xFFFF);
+	idt[entry_num].offset_3 = (uint32_t)((addr >> 32) & 0xFFFFFFFF);
+	idt[entry_num].reserved = 0;
 }
 
 /*
@@ -106,7 +150,7 @@ uintptr_t page_table_init_user(information info, uintptr_t k_pml4e)
 
 	uint64_t *u_pml4e = (uint64_t *)(u_pdpe + 512);
 	u_pml4e[0] = *kernel_pml4e;
-	for(int m = 1; m< 512 - info.num_user_pml4es; m++)
+	for (int m = 1; m < 512 - info.num_user_pml4es; m++)
 	{
 		u_pml4e[m] = 0x0ULL;
 	}
