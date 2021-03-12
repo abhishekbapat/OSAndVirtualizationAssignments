@@ -9,6 +9,8 @@
 
 /* GDT, see kernel_entry.S */
 extern uint64_t gdt[];
+extern void *default_interrupt_handler_ptr;
+extern void *page_fault_handler_ptr;
 
 /*
  * NOTE: When declaring the IDT table, make
@@ -39,7 +41,7 @@ struct idt_entry_struct {
     uint16_t offset_1;
     uint16_t selector;
     uint8_t ist;
-    uint8_t type_attr;
+    uint8_t type_attr; // Merged segment type, segment desc priority level, segment desc present
     uint16_t offset_2;
     uint32_t offset_3;
     uint32_t reserved;
@@ -61,6 +63,7 @@ static inline void load_idt(idt_pointer_t *idtp)
 
 void idt_init();
 void set_idt_entry(uint8_t, uint64_t, uint16_t, uint8_t);
+void default_interrupt_handler(uint64_t);
 
 /*
  * TSS segment, see also https://wiki.osdev.org/Task_State_Segment

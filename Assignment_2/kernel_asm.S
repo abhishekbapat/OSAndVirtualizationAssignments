@@ -85,7 +85,8 @@ user_jump:
 default_trap:
 	cli
 	SAVE_REGS
-	/* TODO: Do something here */
+	movq %rsp, %rdi
+	callq default_interrupt_handler /* Call default_interrupt_handler with %rsp register value as the argument */
 	RESTORE_REGS
 	hlt
 
@@ -94,7 +95,7 @@ default_trap:
 pagefault_trap:
 	cli
 	SAVE_REGS
-	/* TODO: Do something here */
+	callq page_fault_handler /* Call the page fault handler */
 	RESTORE_REGS
 	sti
 	addq $8, %rsp	/* skip the page-fault error code */

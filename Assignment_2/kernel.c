@@ -11,16 +11,21 @@
 
 // Declare the methods.
 uintptr_t page_table_init_kernel(information);
-uintptr_t page_table_init_user(information, uintptr_t);
+uintptr_t page_table_init_user(information, uintptr_t, uint8_t);
 void write_cr3(uintptr_t);
 void tss_segment_init(information);
 
 void *default_interrupt_handler_ptr;
 void *page_fault_handler_ptr;
 
+information global_info;
+uintptr_t global_k_pml4e_base;
+
 // Kernel entry point.
 void kernel_start(void *kernel_stack_buffer, unsigned int *framebuffer, unsigned int width, unsigned int height, information *info)
 {
+	global_info = *info;
+
 	fb_init(framebuffer, width, height);
 
 	uintptr_t user_app_virt_addr = 0xFFFFFFFFC0001000;	 // Calculated manually according to the page table setup.
@@ -31,9 +36,10 @@ void kernel_start(void *kernel_stack_buffer, unsigned int *framebuffer, unsigned
 	printf("User Stack: %p\n", user_stack);
 
 	printf("Initializing page tables for kernel and user space!\n");
-	uintptr_t k_pml4e_base = page_table_init_kernel(*info);				// Initialize kernel page tables.
-	uintptr_t u_pml4e_base = page_table_init_user(*info, k_pml4e_base); // Initialize user page tables.
-	write_cr3(u_pml4e_base);											// Pass the base pml4e to cr3.
+	uintptr_t k_pml4e_base = page_table_init_kernel(*info);				   // Initialize kernel page tables.
+	global_k_pml4e_base = k_pml4e_base;
+	uintptr_t u_pml4e_base = page_table_init_user(*info, k_pml4e_base, 0); // Initialize user page tables.
+	write_cr3(u_pml4e_base);											   // Pass the base pml4e to cr3.
 
 	printf("Initializing system calls!\n");
 	syscall_init(); // Initialize system calls (syscall/sysret).
@@ -64,15 +70,16 @@ void idt_init()
 
 	for (int i = 0; i < NUM_CPU_EXCEPTIONS; i++) // Set the default handler pointer for the first 32 IDT entries.
 	{
-		set_idt_entry(i, (uint64_t)default_interrupt_handler_ptr, (uint16_t)0x8, (uint8_t)0xE);
+		set_idt_entry(i, (uint64_t)default_interrupt_handler_ptr, (uint16_t)0x8, (uint8_t)0x8E);
 	}
 
 	for (int i = NUM_CPU_EXCEPTIONS; i < IDT_TABLE_SIZE; i++) // Initialize all other IDT entries to point to addr 0x0ULL.
 	{
-		set_idt_entry(i, (uint64_t)0x0ULL, (uint16_t)0x8, (uint8_t)0xE);
+		set_idt_entry(i, (uint64_t)0x0ULL, (uint16_t)0x8, (uint8_t)0x8E);
 	}
 
-	//set_idt_entry(PAGE_FAULT_IDT_INDEX, (uint64_t)page_fault_handler_ptr, (uint16_t)0x8, (uint8_t)0xE); // Initialize page fault handler.
+	// Initialize page fault handler. Comment this line out to handle page fault with default handler (Q3.2).
+	set_idt_entry(PAGE_FAULT_IDT_INDEX, (uint64_t)page_fault_handler_ptr, (uint16_t)0x8, (uint8_t)0x8E);
 
 	load_idt(&idt_ptr);
 }
@@ -86,6 +93,18 @@ void set_idt_entry(uint8_t entry_num, uint64_t addr, uint16_t selector, uint8_t 
 	idt[entry_num].offset_2 = (uint16_t)((addr >> 16) & 0xFFFF);
 	idt[entry_num].offset_3 = (uint32_t)((addr >> 32) & 0xFFFFFFFF);
 	idt[entry_num].reserved = 0;
+}
+
+void default_interrupt_handler(uint64_t rsp)
+{
+	printf("An exception has occured. %%rsp: %p\n", (void *)rsp);
+}
+
+void page_fault_handler()
+{
+	printf("Page fault has occured. Allocating a page to the address.\n");
+	uintptr_t u_pml4e_base = page_table_init_user(global_info, global_k_pml4e_base, 1); // Initialize user page tables with extra page.
+	write_cr3(u_pml4e_base);	
 }
 
 /*
@@ -108,7 +127,7 @@ void tss_segment_init(information info)
  * The only caveat is if user_stack + user_app size is > 2mb it will fail as we will need more than 512 ptes.
  * But for the purpose of the assignment, the logic works.
  */
-uintptr_t page_table_init_user(information info, uintptr_t k_pml4e)
+uintptr_t page_table_init_user(information info, uintptr_t k_pml4e, uint8_t redef)
 {
 	void *user_pt_base = (void *)info.user_pt_base;
 	uint64_t *kernel_pml4e = (uint64_t *)k_pml4e;
@@ -116,16 +135,20 @@ uintptr_t page_table_init_user(information info, uintptr_t k_pml4e)
 	uint64_t *u_pte = (uint64_t *)user_pt_base;
 	for (unsigned int i = 0; i < info.num_user_stack_pages; i++)
 	{
-		u_pte[i] = (0x1000 * i) + (info.user_stack_buffer - (info.num_user_stack_pages * 0x1000)) + 0x7;
+		u_pte[i] = (uint64_t)((0x1000 * i) + (info.user_stack_buffer - (info.num_user_stack_pages * 0x1000)) + 0x7);
 	}
 	for (unsigned int i = info.num_user_stack_pages; i < info.num_user_ptes; i++)
 	{
 		unsigned int temp = i - info.num_user_stack_pages;
-		u_pte[i] = (0x1000 * temp) + info.user_app_buffer + 0x7;
+		u_pte[i] = (uint64_t)((0x1000 * temp) + info.user_app_buffer + 0x7);
 	}
 	for (unsigned int i = info.num_user_ptes; i < 512; i++) //Assuming num_user_ptes will be lesser than 512.
 	{
-		u_pte[i] = 0x0ULL;
+		u_pte[i] = (uint64_t)0x0ULL;
+	}
+	if(redef == 1)
+	{
+		u_pte[511] = (uint64_t)(info.extra_page_for_exception + 0x7);
 	}
 
 	uint64_t *u_pde = (uint64_t *)(u_pte + 512);
