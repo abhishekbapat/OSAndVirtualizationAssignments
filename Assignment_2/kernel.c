@@ -97,12 +97,12 @@ void set_idt_entry(uint8_t entry_num, uint64_t addr, uint16_t selector, uint8_t 
 
 void default_interrupt_handler(uint64_t rsp)
 {
-	printf("An exception has occured. %%rsp: %p\n", (void *)rsp);
+	printf("An exception has occurred. %%rsp: %p\n", (void *)rsp);
 }
 
 void page_fault_handler()
 {
-	printf("Page fault has occured. Allocating a page to the address.\n");
+	printf("Page fault has occurred. Allocating a page to the address.\n");
 	uintptr_t u_pml4e_base = page_table_init_user(global_info, global_k_pml4e_base, 1); // Initialize user page tables with extra page.
 	write_cr3(u_pml4e_base);	
 }
