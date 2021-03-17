@@ -7,13 +7,14 @@ lld-link /dll /nodefaultlib /safeseh:no /machine:AMD64 /entry:efi_main boot.o /o
 
 # Compile the kernel
 gcc -Wall -Wno-builtin-declaration-mismatch -O2 -mno-red-zone -nostdinc -fno-stack-protector -I ./kerninc -pie -fno-zero-initialized-in-bss -c kernel_entry.S
+gcc -Wall -Wno-builtin-declaration-mismatch -O2 -mno-red-zone -nostdinc -fno-stack-protector -I ./kerninc -pie -fno-zero-initialized-in-bss -c apic.c
 gcc -Wall -Wno-builtin-declaration-mismatch -O2 -mno-red-zone -nostdinc -fno-stack-protector -I ./kerninc -pie -fno-zero-initialized-in-bss -c kernel.c
 gcc -Wall -Wno-builtin-declaration-mismatch -O2 -mno-red-zone -nostdinc -fno-stack-protector -I ./kerninc -pie -fno-zero-initialized-in-bss -c kernel_asm.S
 gcc -Wall -Wno-builtin-declaration-mismatch -O2 -mno-red-zone -nostdinc -fno-stack-protector -I ./kerninc -pie -fno-zero-initialized-in-bss -c kernel_syscall.c
 gcc -Wall -Wno-builtin-declaration-mismatch -O2 -mno-red-zone -nostdinc -fno-stack-protector -I ./kerninc -pie -fno-zero-initialized-in-bss -c printf.c
 gcc -Wall -Wno-builtin-declaration-mismatch -O2 -mno-red-zone -nostdinc -fno-stack-protector -I ./kerninc -pie -fno-zero-initialized-in-bss -c fb.c
 gcc -Wall -Wno-builtin-declaration-mismatch -O2 -mno-red-zone -nostdinc -fno-stack-protector -I ./kerninc -pie -fno-zero-initialized-in-bss -c ascii_font.c
-ld --oformat=binary -T ./kernel.lds -nostdlib -melf_x86_64 -pie kernel_entry.o kernel.o kernel_asm.o kernel_syscall.o printf.o fb.o ascii_font.o -o kernel
+ld --oformat=binary -T ./kernel.lds -nostdlib -melf_x86_64 -pie kernel_entry.o apic.o kernel.o kernel_asm.o kernel_syscall.o printf.o fb.o ascii_font.o -o kernel
 
 # Comple the user application
 gcc -Wall -Wno-builtin-declaration-mismatch -O2 -mno-red-zone -nostdinc -fno-stack-protector -I ./userinc -pie -fno-zero-initialized-in-bss -c user_entry.S

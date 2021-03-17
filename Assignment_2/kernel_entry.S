@@ -38,6 +38,9 @@ _start:
 	leaq pagefault_trap(%rip), %rax /* page_fault_handler_ptr -> pagefault_trap() */
 	movq %rax, page_fault_handler_ptr(%rip)
 
+	leaq timer_apic(%rip), %rax /* apic_handler_ptr -> timer_apic */
+	movq %rax, apic_handler_ptr(%rip)
+
 	leaq kernel_start(%rip), %rax
 	pushq $0x08
 	pushq %rax

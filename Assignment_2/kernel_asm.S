@@ -3,7 +3,7 @@
  * Copyright 2021 Ruslan Nikolaev <rnikola@vt.edu>
  */
 
-.global syscall_entry, user_jump, pagefault_trap, default_trap
+.global syscall_entry, user_jump, pagefault_trap, default_trap, timer_apic
 .code64
 
 .align 64
@@ -80,13 +80,14 @@ user_jump:
 	popq %rcx						;\
 	popq %rax
 
+/* Part 2 */
 .align 64
 .type default_trap,%function
 default_trap:
 	cli
 	SAVE_REGS
 	movq %rsp, %rdi
-	callq default_interrupt_handler /* Call default_interrupt_handler with %rsp register value as the argument */
+    callq default_interrupt_handler /* Call default_interrupt_handler with %rsp register value as the argument */
 	RESTORE_REGS
 	hlt
 
@@ -99,4 +100,15 @@ pagefault_trap:
 	RESTORE_REGS
 	sti
 	addq $8, %rsp	/* skip the page-fault error code */
+	iretq
+
+/* Part 3 */
+.align 64
+.type timer_apic,%function
+timer_apic:
+	cli
+	SAVE_REGS
+	callq apic_handler /* Call the apic handler */
+	RESTORE_REGS
+	sti
 	iretq

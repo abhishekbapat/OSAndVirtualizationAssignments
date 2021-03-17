@@ -8,6 +8,7 @@
 #include <types.h>
 #include <kernel_syscall.h>
 #include <interrupts.h>
+#include <apic.h>
 
 // Declare the methods.
 uintptr_t page_table_init_kernel(information);
@@ -51,6 +52,8 @@ void kernel_start(void *kernel_stack_buffer, unsigned int *framebuffer, unsigned
 	printf("Initializing Interrupt Desciptor Table!\n");
 	idt_init();
 
+	x86_lapic_enable();
+
 	printf("Jumping to user app!\n\n");
 	user_jump((void *)user_app_virt_addr); // Just to user app in virtual space.
 
@@ -80,6 +83,9 @@ void idt_init()
 
 	// Initialize page fault handler. Comment this line out to handle page fault with default handler (Q3.2).
 	set_idt_entry(PAGE_FAULT_IDT_INDEX, (uint64_t)page_fault_handler_ptr, (uint16_t)0x8, (uint8_t)0x8E);
+
+	// Initializes the 32nd IDT entry to the apic handler.
+	set_idt_entry(APIC_INTERRUPT_ENTRY, (uint64_t)apic_handler_ptr, (uint16_t)0x8, (uint8_t)0x8E);
 
 	load_idt(&idt_ptr);
 }
