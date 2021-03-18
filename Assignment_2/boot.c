@@ -32,6 +32,7 @@ typedef struct information
 	UINT64 tss_stack_buffer;
 	UINT64 tss_segment_buffer;
 	UINT64 extra_page_for_exception;
+	UINT64 tls_buffer;
 	UINT32 num_user_ptes;
 	UINT32 num_user_pdes;
 	UINT32 num_user_pdpes;
@@ -339,6 +340,7 @@ efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable)
 	EFI_PHYSICAL_ADDRESS tss_segment_base = 0x0ULL;
 	EFI_PHYSICAL_ADDRESS tss_stack_base = 0x0ULL;
 	EFI_PHYSICAL_ADDRESS exception_page_base = 0x0ULL;
+	EFI_PHYSICAL_ADDRESS tls_base = 0x0ULL;
 	UINTN kernel_page_table_pages = EFI_SIZE_TO_PAGES(SIZE_8MB + SIZE_16KB + SIZE_8KB);
 	UINTN user_page_table_pages = 0;
 	UINTN kernel_file_size = 0;
@@ -446,6 +448,13 @@ efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable)
 	tss_stack_base += 4096; //Stack moves downwards
 	tss_segment_base = tss_stack_base; // Same base location as stack but moves upwards
 
+	efi_status = AllocatePages(AllocateAnyPages, EfiLoaderData, 1, &tls_base); // Allocate 4kb alignmed memory for tls_base
+	if (EFI_ERROR(efi_status))
+	{
+		BootServices->Stall(5 * 1000000); // 5 seconds
+		return efi_status;
+	}
+
 	efi_status = AllocatePages(AllocateAnyPages, EfiLoaderData, 1, &exception_page_base); // Allocate 4kb alignmed memory for handling page fault exception.
 	if (EFI_ERROR(efi_status))
 	{
@@ -479,6 +488,7 @@ efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable)
 	info->tss_segment_buffer = (UINT64)tss_segment_base;
 	info->tss_stack_buffer = (UINT64)tss_stack_base;
 	info->extra_page_for_exception = (UINT64)exception_page_base;
+	info->tls_buffer = (UINT64)tls_base;
 
 	// kernel's _start() is at base #0 (pure binary format)
 	// cast the function pointer appropriately and call the function

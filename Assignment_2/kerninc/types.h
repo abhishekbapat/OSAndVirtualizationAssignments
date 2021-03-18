@@ -28,6 +28,7 @@ typedef struct information // This struct is used while passing information from
 	uintptr_t tss_stack_buffer;
 	uintptr_t tss_segment_buffer;
 	uintptr_t extra_page_for_exception;
+	uintptr_t tls_buffer;
 	uint32_t num_user_ptes;
 	uint32_t num_user_pdes;
 	uint32_t num_user_pdpes;
@@ -36,3 +37,11 @@ typedef struct information // This struct is used while passing information from
 	uint32_t num_user_stack_pages;
 	uint32_t num_user_binary_pages;
 } information;
+
+struct tls_block
+{
+	uintptr_t myself;
+	char padding[4088];
+};
+
+typedef struct tls_block tls_block_t;

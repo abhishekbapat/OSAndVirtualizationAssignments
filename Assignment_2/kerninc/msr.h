@@ -6,6 +6,7 @@
 #define MSR_STAR	0xC0000081
 #define MSR_LSTAR	0xC0000082
 #define MSR_SFMASK	0xC0000084
+#define MSR_FSBASE 	0xC0000100
 
 /* GDT entries, do not re-arrange those! */
 #define GDT_KERNEL_CODE	0x08

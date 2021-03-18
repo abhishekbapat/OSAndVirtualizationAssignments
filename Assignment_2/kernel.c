@@ -9,12 +9,14 @@
 #include <kernel_syscall.h>
 #include <interrupts.h>
 #include <apic.h>
+#include <msr.h>
 
 // Declare the methods.
 uintptr_t page_table_init_kernel(information);
 uintptr_t page_table_init_user(information, uintptr_t, uint8_t);
 void write_cr3(uintptr_t);
 void tss_segment_init(information);
+void tls_init(information);
 
 void *default_interrupt_handler_ptr;
 void *page_fault_handler_ptr;
@@ -49,6 +51,9 @@ void kernel_start(void *kernel_stack_buffer, unsigned int *framebuffer, unsigned
 	tss_segment_init(*info); // Initialize task state segment.
 	printf("TSS Stack: %p\n", (void *)info->tss_stack_buffer);
 
+	printf("Initializing TLS!\n");
+	tls_init(*info);
+
 	printf("Initializing Interrupt Desciptor Table!\n");
 	idt_init();
 
@@ -61,6 +66,14 @@ void kernel_start(void *kernel_stack_buffer, unsigned int *framebuffer, unsigned
 	while (1)
 	{
 	};
+}
+
+void tls_init(information info)
+{
+	tls_block_t *tls = (tls_block_t *)info.tls_buffer;
+	__builtin_memset((void *)tls, 0x0, sizeof(tls_block_t));
+	tls->myself = (uintptr_t)info.tls_buffer;
+	wrmsr(MSR_FSBASE, (uint64_t)tls);
 }
 
 /*
