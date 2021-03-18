@@ -18,7 +18,7 @@ void user_start(void)
 		a[i] = i;
 
 	__syscall1(call_type_print_message, (long)message1);
-	__syscall1(call_type_print_value, temp);
+	__syscall1(call_type_print_value, (long)temp);
 
 	*((char *)0xFFFFFFFFC01FF000ULL) = 0; // Inducing a page fault. Address corresponds to 511th offset of PTE which will be set to 0x0ULL.
 

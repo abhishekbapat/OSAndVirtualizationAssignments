@@ -136,9 +136,9 @@ x86_lapic_enable(void)
 	/* Reset the task priority register */
 	x86_lapic_write(X86_LAPIC_TPR, 0x00U);
 
-	x86_lapic_write(X86_LAPIC_TIMER_INIT, 0x400000U);
-	x86_lapic_write(X86_LAPIC_TIMER_DIVIDE, 0x2 | (0x1U << 3));
-	x86_lapic_write(X86_LAPIC_TIMER, APIC_INTERRUPT_ENTRY | (0x2U << 16));
+	x86_lapic_write(X86_LAPIC_TIMER_INIT, 0x400000U); // Set counter value.
+	x86_lapic_write(X86_LAPIC_TIMER_DIVIDE, 0x2 | (0x1U << 3)); // Set timer divisor.
+	x86_lapic_write(X86_LAPIC_TIMER, APIC_INTERRUPT_ENTRY | (0x2U << 16)); // Set the timer to correct interrupt vector entry.
 }
 
 void apic_handler()

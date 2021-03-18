@@ -68,11 +68,15 @@ void kernel_start(void *kernel_stack_buffer, unsigned int *framebuffer, unsigned
 	};
 }
 
+/*
+ * Initializes TLS for the user app.
+ */
 void tls_init(information info)
 {
-	tls_block_t *tls = (tls_block_t *)info.tls_buffer;
-	__builtin_memset((void *)tls, 0x0, sizeof(tls_block_t));
-	tls->myself = (uintptr_t)info.tls_buffer;
+	__builtin_memset((void *)info.tls_buffer, 0x0, sizeof(tls_block_t));
+	uintptr_t tls_virt_addr = 0xFFFFFFFFC01FE000ULL; // Virtual address from the user space where the tls struct is mapped. 510th user pte.
+	tls_block_t *tls = (tls_block_t *)tls_virt_addr;
+	tls->myself = (uintptr_t)tls;
 	wrmsr(MSR_FSBASE, (uint64_t)tls);
 }
 
@@ -165,6 +169,7 @@ uintptr_t page_table_init_user(information info, uintptr_t k_pml4e, uint8_t rede
 	{
 		u_pte[i] = (uint64_t)0x0ULL;
 	}
+	u_pte[510] = (uint64_t)(info.tls_buffer + 0x7); // Mapping the tls buffer to user space.
 	if(redef == 1)
 	{
 		u_pte[511] = (uint64_t)(info.extra_page_for_exception + 0x7);
