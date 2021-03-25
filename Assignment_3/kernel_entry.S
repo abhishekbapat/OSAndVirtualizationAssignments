@@ -72,3 +72,10 @@ gdt_end:
 gdt_ptr:
 	.word gdt_end-gdt-1			/* this is OK, addresses cancel out */
 	.quad 0						/* must be initialized to 'gdt' (see above) */
+
+.global _minios_hypercall_page, _minios_shared_info
+.align 4096
+_minios_hypercall_page:
+	.space 4096
+_minios_shared_info:
+	.space 4096
