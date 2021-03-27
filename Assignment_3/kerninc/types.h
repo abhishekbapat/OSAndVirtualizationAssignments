@@ -43,5 +43,25 @@ struct tls_block
 	uintptr_t myself;
 	char padding[4088];
 };
-
 typedef struct tls_block tls_block_t;
+
+/* Xen/KVM per-vcpu time ABI. */
+struct pvclock_vcpu_time_info {
+	uint32_t version;
+	uint32_t pad0;
+	uint64_t tsc_timestamp;
+	uint64_t system_time;
+	uint32_t tsc_to_system_mul;
+	int8_t tsc_shift;
+	uint8_t flags;
+	uint8_t pad[2];
+} __attribute__((__packed__));
+typedef struct pvclock_vcpu_time_info pvclock_vcpu_time_info_t; 
+
+/* Xen/KVM wall clock ABI. */
+struct pvclock_wall_clock {
+	uint32_t version;
+	uint32_t sec;
+	uint32_t nsec;
+} __attribute__((__packed__));
+typedef struct pvclock_wall_clock pvclock_wall_clock_t;

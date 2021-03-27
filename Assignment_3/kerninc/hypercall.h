@@ -42,10 +42,25 @@
 #define __STR(x) #x
 #define STR(x) __STR(x)
 
+#define HYPERVISOR_NONE 0
+#define HYPERVISOR_XEN 1
+
 typedef struct { unsigned long pte; } pte_t;
+
+struct hypervisor_entry {
+	uint32_t ebx;
+	uint32_t ecx;
+	uint32_t edx;
+	uint32_t min_leaves;
+};
+typedef struct hypervisor_entry hypervisor_entry_t;
+
+static hypervisor_entry_t hyperv_signature_xen = { 0x566e6558, 0x65584d4d, 0x4d4d566e, 2 };
 
 extern char _minios_hypercall_page[];
 extern char _minios_shared_info[];
+
+extern shared_info_t *xen_shared_info;
 
 #define _hypercall0(type, name)			\
 ({						\

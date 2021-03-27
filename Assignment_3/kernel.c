@@ -10,6 +10,12 @@
 #include <interrupts.h>
 #include <apic.h>
 #include <msr.h>
+#include <cpuid.h>
+#include <hypercall.h>
+#include <memory.h>
+#include <version.h>
+#include <rdtsc.h>
+#include <xen.h>
 
 // Declare the methods.
 uintptr_t page_table_init_kernel(information);
@@ -17,12 +23,25 @@ uintptr_t page_table_init_user(information, uintptr_t, uint8_t);
 void write_cr3(uintptr_t);
 void tss_segment_init(information);
 void tls_init(information);
+uint32_t xen_detect();
+void xen_hypercalls_init();
+uint32_t xen_base_detect();
+uint32_t xen_shared_init();
+void pvclock_init();
+uint64_t pvclock_monotonic_read();
+uint64_t pvclock_wc_read();
+void wait(uint32_t);
 
 void *default_interrupt_handler_ptr;
 void *page_fault_handler_ptr;
 
 information global_info;
 uintptr_t global_k_pml4e_base;
+uint32_t xen_base;
+
+volatile pvclock_vcpu_time_info_t *pvclock_ti;
+volatile pvclock_wall_clock_t *pvclock_wc;
+shared_info_t *xen_shared_info;
 
 // Kernel entry point.
 void kernel_start(void *kernel_stack_buffer, unsigned int *framebuffer, unsigned int width, unsigned int height, information *info)
@@ -39,7 +58,7 @@ void kernel_start(void *kernel_stack_buffer, unsigned int *framebuffer, unsigned
 	printf("User Stack: %p\n", user_stack);
 
 	printf("Initializing page tables for kernel and user space!\n");
-	uintptr_t k_pml4e_base = page_table_init_kernel(*info);				   // Initialize kernel page tables.
+	uintptr_t k_pml4e_base = page_table_init_kernel(*info); // Initialize kernel page tables.
 	global_k_pml4e_base = k_pml4e_base;
 	uintptr_t u_pml4e_base = page_table_init_user(*info, k_pml4e_base, 0); // Initialize user page tables.
 	write_cr3(u_pml4e_base);											   // Pass the base pml4e to cr3.
@@ -57,7 +76,34 @@ void kernel_start(void *kernel_stack_buffer, unsigned int *framebuffer, unsigned
 	printf("Initializing Interrupt Desciptor Table!\n");
 	idt_init();
 
-	x86_lapic_enable();
+	uint32_t hyperv = xen_detect();
+	if (hyperv == HYPERVISOR_XEN)
+	{
+		printf("Xen hypervisor detected!\n");
+		xen_base = xen_base_detect();
+		xen_hypercalls_init();
+		printf("Initialized Xen hypercalls!\n");
+		if (xen_shared_init() == 0)
+		{
+			uint32_t version;
+			version = (uint32_t)HYPERVISOR_xen_version(XENVER_version, NULL);
+			printf("Major version: %d\n", version >> 16);
+			printf("Minor version: %d\n", version & 0xFFFF);
+
+			pvclock_init();
+			printf("PV Clock Monotonic: %ld\n", pvclock_monotonic_read());
+			printf("PV Clock Wall Clock: %ld\n", pvclock_wc_read());
+			wait(5);
+			printf("PV Clock Monotonic: %ld\n", pvclock_monotonic_read());
+			printf("PV Clock Wall Clock: %ld\n", pvclock_wc_read());
+		}
+		else
+		{
+			printf("Could not get Xen shared info!\n");
+		}
+	}
+
+	//x86_lapic_enable();
 
 	printf("Jumping to user app!\n\n");
 	user_jump((void *)user_app_virt_addr); // Just to user app in virtual space.
@@ -66,6 +112,135 @@ void kernel_start(void *kernel_stack_buffer, unsigned int *framebuffer, unsigned
 	while (1)
 	{
 	};
+}
+
+uint32_t xen_detect()
+{
+	uint32_t eax, ebx, ecx, edx;
+
+	x86_cpuid(0x0, &eax, &ebx, &ecx, &edx); // check for hypervisor present bit.
+	if (eax >= 0x1)
+	{
+		x86_cpuid(0x1, &eax, &ebx, &ecx, &edx);
+		if (!(ecx & (1 << 31)))
+			return HYPERVISOR_NONE;
+	}
+	else
+		return HYPERVISOR_NONE;
+
+	x86_cpuid(0x40000000, &eax, &ebx, &ecx, &edx); // cpuid leaf at 0x40000000 returns hyperv vendor signature.
+	if (!(eax >= 0x40000000))
+		return HYPERVISOR_NONE;
+
+	if (ebx == hyperv_signature_xen.ebx && // Check for Xen.
+		ecx == hyperv_signature_xen.ecx &&
+		edx == hyperv_signature_xen.edx)
+		return HYPERVISOR_XEN;
+
+	return HYPERVISOR_NONE; // No support for other HyperVs.
+}
+
+void xen_hypercalls_init()
+{
+	uint32_t eax, ebx, ecx, edx;
+	uint64_t page = (unsigned long)_minios_hypercall_page;
+
+	x86_cpuid(xen_base + 2, &eax, &ebx, &ecx, &edx);
+	if (eax != 1)
+	{
+		xen_base = 0;
+		return;
+	}
+
+	wrmsr(ebx, page);
+}
+
+uint32_t xen_base_detect()
+{
+	uint32_t base, eax, ebx, ecx, edx;
+
+	/* Find the base. */
+	for (base = 0x40000000; base < 0x40010000; base += 0x100)
+	{
+		x86_cpuid(base, &eax, &ebx, &ecx, &edx);
+		if ((eax - base) >= hyperv_signature_xen.min_leaves &&
+			ebx == hyperv_signature_xen.ebx &&
+			ecx == hyperv_signature_xen.ecx &&
+			edx == hyperv_signature_xen.edx)
+		{
+			return base;
+		}
+	}
+	return 0;
+}
+
+uint32_t xen_shared_init()
+{
+	struct xen_add_to_physmap xatp;
+
+	xen_shared_info = (shared_info_t *)_minios_shared_info;
+	xatp.domid = DOMID_SELF;
+	xatp.idx = 0;
+	xatp.space = XENMAPSPACE_shared_info;
+	xatp.gpfn = (unsigned long)xen_shared_info >> 12;
+	return (uint32_t)HYPERVISOR_memory_op(XENMEM_add_to_physmap, &xatp);
+}
+
+void pvclock_init()
+{
+	pvclock_ti = (pvclock_vcpu_time_info_t *)&xen_shared_info->vcpu_info[0].time;
+	pvclock_wc = (pvclock_wall_clock_t *)&xen_shared_info->wc_version;
+}
+
+uint64_t pvclock_monotonic_read()
+{
+	uint32_t version;
+	uint64_t delta, time_now;
+	do
+	{
+		version = pvclock_ti->version;
+		__asm__("mfence" ::
+					: "memory");
+		delta = rdtsc() - pvclock_ti->tsc_timestamp;
+		if (pvclock_ti->tsc_shift < 0)
+			delta >>= -pvclock_ti->tsc_shift;
+		else
+			delta <<= pvclock_ti->tsc_shift;
+		time_now = mul64_32(delta, pvclock_ti->tsc_to_system_mul) +
+				   pvclock_ti->system_time;
+		__asm__("mfence" ::
+					: "memory");
+	} while ((pvclock_ti->version & 1) || (pvclock_ti->version != version));
+
+	return (uint64_t)time_now; // current time in nano seconds.
+}
+
+uint64_t pvclock_wc_read()
+{
+	uint32_t version;
+	uint64_t wc_boot;
+
+	do
+	{
+		version = pvclock_wc->version;
+		__asm__("mfence" ::
+					: "memory");
+		wc_boot = pvclock_wc->sec * NSEC_PER_SEC;
+		wc_boot += pvclock_wc->nsec;
+		__asm__("mfence" ::
+					: "memory");
+	} while ((pvclock_wc->version & 1) || (pvclock_wc->version != version));
+
+	return wc_boot;
+}
+
+void wait(uint32_t secs)
+{
+	uint64_t time_now, time = pvclock_monotonic_read();
+	do
+	{
+		time_now = pvclock_monotonic_read();
+	} while (((time_now - time)/NSEC_PER_SEC) < secs);
 }
 
 /*
@@ -127,7 +302,7 @@ void page_fault_handler()
 {
 	printf("Page fault has occurred. Allocating a page to the address.\n");
 	uintptr_t u_pml4e_base = page_table_init_user(global_info, global_k_pml4e_base, 1); // Initialize user page tables with extra page.
-	write_cr3(u_pml4e_base);	
+	write_cr3(u_pml4e_base);
 }
 
 /*
@@ -170,7 +345,7 @@ uintptr_t page_table_init_user(information info, uintptr_t k_pml4e, uint8_t rede
 		u_pte[i] = (uint64_t)0x0ULL;
 	}
 	u_pte[510] = (uint64_t)(info.tls_buffer + 0x7); // Mapping the tls buffer to user space.
-	if(redef == 1)
+	if (redef == 1)
 	{
 		u_pte[511] = (uint64_t)(info.extra_page_for_exception + 0x7);
 	}
