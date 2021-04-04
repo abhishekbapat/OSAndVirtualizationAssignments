@@ -42,6 +42,7 @@ uint32_t xen_base;
 volatile pvclock_vcpu_time_info_t *pvclock_ti;
 volatile pvclock_wall_clock_t *pvclock_wc;
 shared_info_t *xen_shared_info;
+uint64_t wall_clock_offset;
 
 // Kernel entry point.
 void kernel_start(void *kernel_stack_buffer, unsigned int *framebuffer, unsigned int width, unsigned int height, information *info)
@@ -91,11 +92,14 @@ void kernel_start(void *kernel_stack_buffer, unsigned int *framebuffer, unsigned
 			printf("Minor version: %d\n", version & 0xFFFF);
 
 			pvclock_init();
-			printf("PV Clock Monotonic: %ld\n", pvclock_monotonic_read());
-			printf("PV Clock Wall Clock: %ld\n", pvclock_wc_read());
-			wait(5);
-			printf("PV Clock Monotonic: %ld\n", pvclock_monotonic_read());
-			printf("PV Clock Wall Clock: %ld\n", pvclock_wc_read());
+			uint64_t time_now = pvclock_monotonic_read();
+			wall_clock_offset = pvclock_wc_read();
+			printf("PV Clock Monotonic: %ldns\n", time_now);
+			printf("PV Clock Wall Clock: %ldns\n", wall_clock_offset + time_now);
+			wait(1);
+			time_now = pvclock_monotonic_read();
+			printf("PV Clock Monotonic after busy wait: %ldns\n", time_now);
+			printf("PV Clock Wall Clock after busy wait: %ldns\n", wall_clock_offset + time_now);
 		}
 		else
 		{
