@@ -34,7 +34,6 @@ typedef struct information
 	UINT64 extra_page_for_exception;
 	UINT64 tls_buffer;
 	UINT64 shared_page;
-	UINT64 gnttab_table;
 	UINT32 num_user_ptes;
 	UINT32 num_user_pdes;
 	UINT32 num_user_pdpes;
@@ -343,7 +342,6 @@ efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable)
 	EFI_PHYSICAL_ADDRESS tss_stack_base = 0x0ULL;
 	EFI_PHYSICAL_ADDRESS exception_page_base = 0x0ULL;
 	EFI_PHYSICAL_ADDRESS tls_base = 0x0ULL;
-	EFI_PHYSICAL_ADDRESS gnt_table_base = 0x0ULL;
 	EFI_PHYSICAL_ADDRESS shared_page_base = 0x0ULL;
 	UINTN kernel_page_table_pages = EFI_SIZE_TO_PAGES(SIZE_8MB + SIZE_16KB + SIZE_8KB);
 	UINTN user_page_table_pages = 0;
@@ -466,13 +464,6 @@ efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable)
 		return efi_status;
 	}
 
-	efi_status = AllocatePages(AllocateAnyPages, EfiBootServicesData, 1, &gnt_table_base); // Allocate 4kb alignmed memory for gnt_table.
-	if (EFI_ERROR(efi_status))
-	{
-		BootServices->Stall(5 * 1000000); // 5 seconds
-		return efi_status;
-	}
-
 	efi_status = AllocatePages(AllocateAnyPages, EfiBootServicesData, 1, &exception_page_base); // Allocate 4kb alignmed memory for handling page fault exception.
 	if (EFI_ERROR(efi_status))
 	{
@@ -507,7 +498,6 @@ efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable)
 	info->tss_stack_buffer = (UINT64)tss_stack_base;
 	info->extra_page_for_exception = (UINT64)exception_page_base;
 	info->tls_buffer = (UINT64)tls_base;
-	info->gnttab_table = (UINT64)gnt_table_base;
 	info->shared_page = (UINT64)shared_page_base;
 
 	// kernel's _start() is at base #0 (pure binary format)

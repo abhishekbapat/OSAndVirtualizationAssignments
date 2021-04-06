@@ -13,6 +13,7 @@
 #include <cpuid.h>
 #include <hypercall.h>
 #include <gnttab.h>
+#include <grant_table.h>
 #include <memory.h>
 #include <version.h>
 #include <rdtsc.h>
@@ -103,18 +104,22 @@ void kernel_start(void *kernel_stack_buffer, unsigned int *framebuffer, unsigned
 			time_now = pvclock_monotonic_read();
 			printf("PV Clock Monotonic after busy wait: %ldns\n", time_now);
 			printf("PV Clock Wall Clock after busy wait: %ldns\n", wall_clock_offset + time_now);
-			gnttab_table = (grant_entry_v1_t *)info->gnt_table;
-			init_gnttab();
-			char *msg = (char *)info->shared_page;
-			msg[0] = 'H';
-			msg[1] = 'i';
-			msg[2] = '\0';
-			unsigned long shared_page_frame = (unsigned long)msg;
-			grant_ref_t ref;
-			shared_page_frame /= 0x1000;
-			ref = gnttab_grant_access((domid_t)6, shared_page_frame, 0);
-			printf("The shared message is : %s\n", msg);
-			printf("The grant reference number: %d\n", ref);
+
+			struct gnttab_map_grant_ref op;
+			int rc;
+			op.ref = (grant_ref_t)511;
+			op.dom = (domid_t)5;
+			op.host_addr = (uint64_t)info->shared_page;
+			op.flags = GNTMAP_host_map;
+			rc = HYPERVISOR_grant_table_op(GNTTABOP_map_grant_ref, &op, 1);
+			if (rc != 0 || op.status != GNTST_okay)
+			{
+				printf("GNTTABOP_map_grant_ref failed, return value:%d, status:%d\n", rc, op.status);
+			}
+			else
+			{
+				printf("Message read from shared memory: %s\n", (char *)op.host_addr);
+			}
 		}
 		else
 		{
@@ -262,7 +267,7 @@ void wait(uint32_t secs)
 	do
 	{
 		time_now = pvclock_monotonic_read();
-	} while (((time_now - time)/NSEC_PER_SEC) < secs);
+	} while (((time_now - time) / NSEC_PER_SEC) < secs);
 }
 
 /*

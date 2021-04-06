@@ -18,7 +18,7 @@ typedef unsigned long long uintptr_t;
 
 #define NULL ((void *)0)
 
-struct information // This struct is used while passing information from bootloader to kernel.
+typedef struct information // This struct is used while passing information from bootloader to kernel.
 {
 	uintptr_t kernel_stack_buffer;
 	uintptr_t user_stack_buffer;
@@ -30,7 +30,6 @@ struct information // This struct is used while passing information from bootloa
 	uintptr_t extra_page_for_exception;
 	uintptr_t tls_buffer;
 	uintptr_t shared_page;
-	uintptr_t gnt_table;
 	uint32_t num_user_ptes;
 	uint32_t num_user_pdes;
 	uint32_t num_user_pdpes;
@@ -38,8 +37,7 @@ struct information // This struct is used while passing information from bootloa
 	uint32_t num_kernel_stack_pages;
 	uint32_t num_user_stack_pages;
 	uint32_t num_user_binary_pages;
-};
-typedef struct information information;
+} information;
 
 struct tls_block
 {
